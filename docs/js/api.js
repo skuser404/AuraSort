@@ -11,13 +11,20 @@ async function call(path, body) { // Why: every request carries the per-run toke
       body: body ? JSON.stringify(body) : undefined });
   } catch (e) { throw new Error('offline') }
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error || r.statusText);
+  if (!r.ok) throw apiError(j, r, path);
   return j;
 }
-function friendly(e) { // Why: plain-English errors; no stack traces or paths
-  const m = String(e && e.message || e || '');
+function apiError(j, r, path) { // Why: the server answers {error, code, hint}; keep all three (and the step) for friendly text and "Copy details"
+  const e = new Error(j.error || r.statusText || 'Request failed');
+  e.code = j.code || ''; e.hint = j.hint || ''; e.status = r.status; e.step = 'request ' + String(path).split('?')[0];
+  return e;
+}
+function friendly(e) { // Why: plain-English errors; no stack traces, exception names or paths
+  const m = String(e && e.message || e || ''), code = e && e.code;
   if (m === 'offline' || /failed to fetch|networkerror/i.test(m)) return `Can't reach the ${APP.name} server. Make sure server.py is still running, then reload.`;
-  if (/session expired|bad token/i.test(m)) return 'This page belongs to an older server session. Reload the page to reconnect.';
+  if (code && ERROR_TEXT[code]) return ERROR_TEXT[code];
+  if (/session expired|bad token/i.test(m)) return ERROR_TEXT.session_expired;
+  if (/^[A-Z][a-zA-Z]*Error\b/.test(m) || /unexpected error \(/i.test(m)) return ERROR_TEXT.internal;   // never show an exception name
   return m ? m.charAt(0).toUpperCase() + m.slice(1) : 'Something went wrong.';
 }
 const RealApi = {

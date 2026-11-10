@@ -168,10 +168,22 @@ class ProcessTest(TempHomeCase):
     def test_log_redaction(self):
         alog.add_secret("SUPERSECRETTOKEN")
         rec = logging.LogRecord("x", logging.INFO, "", 0, "token %s at %s", ("SUPERSECRETTOKEN", str(config.HOME / "Documents")), None)
-        alog._redactor.filter(rec)
-        self.assertNotIn("SUPERSECRETTOKEN", rec.msg)
-        self.assertNotIn(str(config.HOME), rec.msg)
-        self.assertIn("~", rec.msg)
+        out = alog.SafeFormatter(alog.FORMAT).format(rec)
+        self.assertNotIn("SUPERSECRETTOKEN", out)
+        self.assertNotIn(str(config.HOME), out)
+        self.assertIn("~", out)
+
+    def test_traceback_is_redacted_too(self):
+        """Regression: the traceback text (not only the message) is masked, since tracebacks now go to the log."""
+        alog.add_secret("SUPERSECRETTOKEN")
+        try:
+            raise OSError(f"cannot open {config.HOME / 'Music' / 'x.mp3'} with SUPERSECRETTOKEN")
+        except OSError:
+            rec = logging.LogRecord("x", logging.ERROR, "", 0, "failed", (), sys.exc_info())
+        out = alog.SafeFormatter(alog.FORMAT).format(rec)
+        self.assertIn("Traceback", out)
+        self.assertNotIn("SUPERSECRETTOKEN", out)
+        self.assertNotIn(str(config.HOME), out)
 
     def test_private_data_folder(self):
         from core.platform_utils import make_private

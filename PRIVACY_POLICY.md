@@ -23,7 +23,7 @@ on macOS and Linux). On Windows it is readable by your account only; on macOS an
 | Scan snapshots (used space per drive, for the trend chart) | in the index | you delete the data |
 | History and Undo logs (which files were moved, copied or sent to the Recycle Bin, and where) | `history/*.json` | you delete the data |
 | Thumbnails of pictures | `thumbs/` | you delete the data |
-| A log of errors (your token, keys and home folder path are masked) | `aurasort.log` | it rotates at 1 MB, keeping 3 files |
+| A log of errors (your token, keys and home folder path are masked) | `logs/server.log` | it rotates at 1 MB, keeping 3 files; it never contains file contents |
 | Document Insights results and extracted text | **memory only**, never on disk | 30, 60 or 90 minutes after a batch finishes (default 60), when AuraSort closes, or when a file is moved or deleted |
 | A cloud API key, if you choose to remember it | your system keychain (Windows Credential Manager, macOS Keychain, Linux Secret Service) | you remove it or reset the AI settings |
 

@@ -11,7 +11,7 @@ import time
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlparse
 
-from . import config
+from . import config, schema
 from .log import log
 
 STATIC_TYPES = {"html": "text/html; charset=utf-8", "js": "text/javascript; charset=utf-8", "mjs": "text/javascript; charset=utf-8", "css": "text/css; charset=utf-8",
@@ -48,11 +48,16 @@ def friendly_error(ex):
 
 
 class ApiError(Exception):
-    """Why: route code raises a status + friendly message; the handler turns it into JSON."""
+    """Why: route code raises a status + friendly message (+ a stable code and a hint); the handler turns it into JSON."""
 
-    def __init__(self, status, message):
+    def __init__(self, status, message, code="", hint=""):
         super().__init__(message)
-        self.status = status
+        self.status, self.code, self.hint = status, code or STATUS_CODES.get(status, "error"), hint
+
+
+STATUS_CODES = {400: "invalid", 401: "session_expired", 403: "forbidden", 404: "not_found", 405: "not_allowed", 409: "confirm_needed",
+                413: "too_large", 416: "bad_range", 429: "rate_limited", 500: "internal", 507: "disk_full"}
+INTERNAL_HINT = f"Details are in the log file: {config.LOG_FILE_SHOWN}"
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -90,8 +95,9 @@ class Handler(BaseHTTPRequestHandler):
         if self.command != "HEAD":
             self.wfile.write(body)
 
-    def fail(self, code, message):
-        self.send(code, {"error": message})
+    def fail(self, status, message, code="", hint=""):
+        """Why: every API error has the same shape, {error, code, hint}; the UI maps the code to friendly text."""
+        self.send(status, {"error": message, "code": code or STATUS_CODES.get(status, "error"), "hint": hint})
 
     def send_file(self, path, ctype, extra=None):
         """Why: previews stream big files in chunks and honour one HTTP range, so video and audio can seek."""
@@ -175,34 +181,53 @@ class Handler(BaseHTTPRequestHandler):
         return body
 
     # ---------------- dispatch ----------------
+    def refuse(self, status, message):
+        """Why: a request refused before its body is read (403/401/405/429) still has that body on the socket; closing
+        with unread data makes Windows reset the connection, and the browser then sees "connection reset" instead of
+        our JSON error. Small bodies are read and dropped first; big ones close the connection on purpose."""
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            n = 0
+        if 0 < n <= config.MAX_BODY_BYTES:
+            self.rfile.read(n)
+        elif n:
+            self.close_connection = True
+        return self.fail(status, message)
+
     def handle_any(self, method):
         u = urlparse(self.path)
         if not self.ok_host():
-            return self.fail(403, "Open the app from the address printed by the server.")
+            return self.refuse(403, "Open the app from the address printed by the server.")
         if not u.path.startswith("/api/"):
             if method not in ("GET", "HEAD"):
-                return self.fail(405, "Not allowed.")
+                return self.refuse(405, "Not allowed.")
             return self.static(u.path)
         if not self.ok_origin() or self.headers.get("Sec-Fetch-Site", "same-origin") not in ("same-origin", "none"):
-            return self.fail(403, "Cross-site request blocked.")
+            return self.refuse(403, "Cross-site request blocked.")
         name = u.path[5:]
         if name not in SIGNED_ROUTES and not self.ok_token():
-            return self.fail(401, "Session expired. Reload the page.")
+            return self.refuse(401, "Session expired. Reload the page.")
         if not self.rate_ok(name):
-            return self.fail(429, "Too many requests. Wait a moment and try again.")
+            return self.refuse(429, "Too many requests. Wait a moment and try again.")
         try:
             body = self.read_json() if method == "POST" else {}
             fn = self.routes.get(f"{'GET' if method == 'HEAD' else method} {name}")   # HEAD = GET without the body
             if not fn:
                 raise ApiError(404, "Unknown endpoint.")
+            if method == "POST":
+                schema.check_fields(name, body)
             fn(self, parse_qs(u.query), body)
         except ApiError as ex:
-            self.fail(ex.status, str(ex))
-        except (ValueError, TypeError, KeyError) as ex:
-            self.fail(400, friendly_error(ex))
-        except Exception:  # noqa: BLE001 - details go to the log, never to the browser
+            self.fail(ex.status, str(ex), ex.code, ex.hint)
+        except schema.BadRequest as ex:
+            self.fail(400, str(ex), ex.code, ex.hint)
+        except ValueError as ex:   # our own checks raise ValueError with friendly text; parser errors become generic
+            log.info("request %s %s refused: %s", method, u.path, ex)
+            self.fail(400, friendly_error(ex), "invalid")
+        except Exception:  # noqa: BLE001 - KeyError, TypeError... are bugs: full traceback to the log, never to the browser
             log.exception("request failed: %s %s", method, u.path)
-            self.fail(500, "Something went wrong. Details are in the log file.")
+            self.fail(500, "Something went wrong on our side.", "internal", INTERNAL_HINT)
 
     def do_GET(self):
         self.handle_any("GET")

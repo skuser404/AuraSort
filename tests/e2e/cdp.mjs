@@ -19,16 +19,21 @@ export async function launch({ port = 9333, profile, width = 1440, height = 900 
   await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej });
   let id = 0; const pending = new Map(), listeners = [];
   ws.onmessage = ev => { const m = JSON.parse(ev.data); if (m.id && pending.has(m.id)) { const { res, rej } = pending.get(m.id); pending.delete(m.id); m.error ? rej(new Error(JSON.stringify(m.error))) : res(m.result) } else listeners.forEach(l => l(m)) };
-  const send = (method, params = {}) => new Promise((res, rej) => { const i = ++id; pending.set(i, { res, rej }); ws.send(JSON.stringify({ id: i, method, params })) });
+  let gone = '';
+  const dropAll = why => { gone = gone || why; for (const { rej } of pending.values()) rej(new Error(gone)); pending.clear() };
+  ws.onclose = ev => dropAll(`browser connection closed (code ${ev.code}${ev.reason ? ', ' + ev.reason : ''})`);  // Why: otherwise awaits hang and Node exits with "unsettled top-level await"
+  const send = (method, params = {}) => new Promise((res, rej) => { if (gone) return rej(new Error(gone)); const i = ++id; pending.set(i, { res, rej }); ws.send(JSON.stringify({ id: i, method, params })) });
+  proc.on('exit', (code, sig) => dropAll(`browser exited (code ${code}, signal ${sig})`));
   const errors = [];
   listeners.push(m => {
     if (m.method === 'Runtime.exceptionThrown') errors.push('EXCEPTION ' + (m.params.exceptionDetails.exception?.description || m.params.exceptionDetails.text));
     if (m.method === 'Runtime.consoleAPICalled' && ['error', 'warning', 'assert'].includes(m.params.type)) errors.push('CONSOLE.' + m.params.type + ' ' + m.params.args.map(a => a.value ?? a.description).join(' '));
     if (m.method === 'Log.entryAdded' && ['error', 'warning'].includes(m.params.entry.level)) errors.push('LOG.' + m.params.entry.level + ' ' + m.params.entry.text + ' ' + (m.params.entry.url || ''));
+    if (m.method === 'Inspector.targetCrashed') dropAll('the page crashed (renderer process died)');
     if (m.method === 'Page.javascriptDialogOpening') { send('Page.handleJavaScriptDialog', { accept: true }); dialogs.push(m.params.message) }
   });
   const dialogs = [];
-  await send('Runtime.enable'); await send('Log.enable'); await send('Page.enable');
+  await send('Runtime.enable'); await send('Log.enable'); await send('Page.enable'); await send('Inspector.enable');
   await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false });
   await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
   const api = {

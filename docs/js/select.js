@@ -69,7 +69,7 @@ ACT.selall = async t => { // Why: "Select all N matching" resolves the whole fil
     ids.forEach((id, i) => { if (!S.sel.has(id)) S.sel.set(id, { size: sizes[i] || 0 }) });
     c.allSelected = true;
     toast(`Selected all ${fmt(ids.length)} matching files`, 'ok');
-  } catch (e) { toast(friendly(e), 'err') }
+  } catch (e) { toastError(e) }
   Sel.paint();
 };
 ACT.selclear = () => Sel.clear();

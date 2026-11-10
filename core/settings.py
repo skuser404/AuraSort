@@ -38,8 +38,14 @@ def load():
             raise ValueError
     except (OSError, ValueError):
         data = {}
-    out = {**DEFAULTS, **{k: v for k, v in data.items() if k in DEFAULTS}}
-    out["ai"] = {**AI_DEFAULTS, **(out["ai"] if isinstance(out["ai"], dict) else {})}
+    out = dict(DEFAULTS)
+    for k, v in data.items():
+        if k not in DEFAULTS:
+            continue
+        try:
+            out[k] = {**AI_DEFAULTS, **v} if k == "ai" and isinstance(v, dict) else _clean(k, v)
+        except (TypeError, ValueError):
+            out[k] = DEFAULTS[k]       # an old or hand-edited file with a wrong type must not break scans later
     return out
 
 
@@ -48,13 +54,14 @@ def _clean(key, value):
     if key in ("roots", "skip", "dest_roots", "drives"):
         if not isinstance(value, list):
             raise ValueError("Invalid settings.")
-        return [str(v)[:1024] for v in value if isinstance(v, str) and v.strip()][:MAX_LIST]
+        # long paths are kept whole or dropped: a cut-off path would silently point at a different folder
+        return [v for v in value if isinstance(v, str) and v.strip() and len(v) <= config.MAX_PATH_CHARS][:MAX_LIST]
     if key == "optin":
         return [c for c in value if c in classify.VIEW_ONLY] if isinstance(value, list) else []
     if key == "mode":
         return value if value in ("quick", "deep") else "quick"
     if key == "dest":
-        return str(value)[:1024]
+        return str(value) if len(str(value)) <= config.MAX_PATH_CHARS else ""
     if key == "ai":
         return _clean_ai(value)
     raise ValueError("Unknown setting.")

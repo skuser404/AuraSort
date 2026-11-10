@@ -66,7 +66,7 @@ async function startMove() {
     const r = await API.execute({ dest: m.dest, mode: m.mode, flat: m.flat, types: [...m.types], formats: [...m.formats], allow_project: !!p.project_files });
     if (r.blocked) toast(`${fmt(r.blocked)} protected or view-only files were left out.`);
     Stage.open(p, r.job, { mode: m.mode, dest: m.dest, predicted: predicted(m) });
-  } catch (e) { toast(friendly(e), 'err') }
+  } catch (e) { toastError(e) }
 }
 CH.dest = t => { const m = moveState(); m.dest = t.value.trim(); clearTimeout(CH.dt); CH.dt = setTimeout(loadPlan, 450) };
 CH.mvmode = t => { moveState().mode = t.value; render(false) };
@@ -77,11 +77,11 @@ ACT['mvfmt-clear'] = () => { moveState().formats = new Set(); loadPlan() };
 ACT['pick-dest'] = () => Picker.open({ mode: 'dest', title: 'Choose the destination folder', onDone: paths => { if (paths[0]) { moveState().dest = paths[0]; render(false) } } });
 ACT['mv-start'] = () => startMove();
 ACT['st-done'] = () => Stage.close(Stage.back);
-ACT['st-pause'] = t => API.jobControl(Stage.jid, t.dataset.p === 'true' ? 'resume' : 'pause').catch(e => toast(friendly(e), 'err'));
+ACT['st-pause'] = t => API.jobControl(Stage.jid, t.dataset.p === 'true' ? 'resume' : 'pause').catch(e => toastError(e));
 ACT['st-cancel'] = async () => { // Why: files already done stay done and verified; the file in progress is kept at its source
   if (!await confirmDialog({ title: 'Stop now?', ok: 'Stop', danger: true, body: '<p>Files already finished stay where they are (and can be undone from History). The file being copied right now stays at its original place; its partial copy is removed.</p>' })) return;
-  API.jobControl(Stage.jid, 'cancel').catch(e => toast(friendly(e), 'err'));
+  API.jobControl(Stage.jid, 'cancel').catch(e => toastError(e));
 };
-ACT['st-open'] = () => API.revealJob(Stage.jid).then(r => r && r.demo && toast('Demo: this would open the destination folder.')).catch(e => toast(friendly(e), 'err'));
+ACT['st-open'] = () => API.revealJob(Stage.jid).then(r => r && r.demo && toast('Demo: this would open the destination folder.')).catch(e => toastError(e));
 ACT['st-undo'] = async () => { if (!await confirmDialog({ title: 'Undo this move?', body: 'Every file goes back to where it came from (nothing is overwritten).', ok: 'Undo move' })) return;
-  try { const r = await API.undo(Stage.jid); toast(`Restored ${fmt(r.restored)} files${r.missing ? `, ${fmt(r.missing)} missing` : ''}`, 'ok'); Stage.close('history') } catch (e) { toast(friendly(e), 'err') } };
+  try { const r = await API.undo(Stage.jid); toast(`Restored ${fmt(r.restored)} files${r.missing ? `, ${fmt(r.missing)} missing` : ''}`, 'ok'); Stage.close('history') } catch (e) { toastError(e) } };

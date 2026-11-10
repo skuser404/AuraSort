@@ -62,7 +62,15 @@ const dayLabel = key => { const [y, m, d] = key.split('-').map(Number); return n
 /* ---------------- paths ---------------- */
 const pathHtml = p => { const s = String(p), i = Math.max(s.lastIndexOf('\\'), s.lastIndexOf('/')); return `<span class="fpath" title="${esc(s)}">${esc(s.slice(0, i + 1))}<b>${esc(s.slice(i + 1))}</b></span>` };
 const joinPath = (dir, name) => { const s = String(dir), sep = s.includes('\\') ? '\\' : '/'; return (s.endsWith(sep) ? s : s + sep) + name };
-const driveName = p => /^[A-Za-z]:/.test(p || '') ? String(p).slice(0, 2).toUpperCase() : (String(p || '').startsWith('/Volumes/') ? String(p).split('/')[2] : '/');
+function driveName(p) { // Why: a short label for any mount: "C:", a network share "\\server\share", "My Disk" (macOS), "usb" (/media/usb) or "/"
+  const s = String(p || '');
+  if (/^[A-Za-z]:/.test(s)) return s.slice(0, 2).toUpperCase();
+  const unc = s.match(/^[\\/]{2}([^\\/]+)[\\/]+([^\\/]+)/);
+  if (unc) return `\\\\${unc[1]}\\${unc[2]}`;
+  if (s.startsWith('/Volumes/')) return s.split('/')[2] || '/';
+  const parts = s.split('/').filter(Boolean);
+  return parts.length ? parts[parts.length - 1] : '/';
+}
 
 /* ---------------- misc ---------------- */
 function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms) } }

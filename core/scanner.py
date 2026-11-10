@@ -6,12 +6,14 @@ import collections
 import os
 import queue
 import shutil
+import sqlite3
 import stat
 import threading
 import time
 
 from . import classify, config, history, index_db, jobs, settings
 from .log import log
+from .schema import NOTHING_SELECTED, BadRequest
 from .platform_utils import created_time, drive_media, drive_of, is_hidden_system, is_reparse_or_link, quick_folders, within
 from .safety import canonical, folder_kind, is_project, is_protected
 
@@ -23,20 +25,67 @@ WRITER_FLUSH_S = 0.5
 CURRENT = {"job": None}
 
 
+class ScanFailed(Exception):
+    """Why: a fatal problem (the index cannot be written) ends the scan with a plain message, a stable code and a hint."""
+
+    def __init__(self, message, code, hint="", step=""):
+        super().__init__(message)
+        self.code, self.hint, self.step = code, hint, step
+
+
+# sqlite3 message fragment -> (code, message, hint). Anything else is reported as "index_error".
+INDEX_ERRORS = (
+    ("locked", "index_busy", "The file index is being used by another AuraSort window or program.",
+     "Close other AuraSort windows (or restart the PC), then try again."),
+    ("full", "disk_full", "The drive that holds your AuraSort data is full.", "Free some space on that drive, then try again."),
+    ("readonly", "index_readonly", "The file index could not be written (the data folder is read-only).",
+     "Check that your user folder is writable, then try again."),
+    ("disk i/o", "index_io", "The file index could not be written (a disk read/write error).", "Check the drive for errors, then try again."),
+)
+
+
+def index_failure(ex, step):
+    """Why: turn a database error into words a person can act on (the traceback goes to the log)."""
+    low = str(ex).lower()
+    for frag, code, msg, hint in INDEX_ERRORS:
+        if frag in low:
+            return ScanFailed(msg, code, hint, step)
+    return ScanFailed("The file index could not be updated.", "index_error", f"Details are in the log file: {config.LOG_FILE_SHOWN}", step)
+
+
+def storable(text):
+    """Why: Windows allows names with broken Unicode (lone surrogates, e.g. from old phones or bad unzips); SQLite can't store them."""
+    try:
+        text.encode("utf-8")
+        return True
+    except UnicodeEncodeError:
+        return False
+
+
 # ---------------- validation ----------------
-def clean_roots(roots):
-    """Why: every root is resolved (8.3 names, links), must exist and must not be protected."""
-    out = []
+def clean_roots(roots, report=None):
+    """Why: every root is resolved (8.3 names, links) and must not be protected. A missing folder is skipped (counted in
+    `report`) as long as something else is left to scan; with nothing left, the request is refused with a clear message."""
+    out, missing = [], 0
     for r in roots:
         r = canonical(r)
         if not os.path.isdir(r):
-            raise ValueError("One of the folders to scan does not exist (or its drive is unplugged).")
+            missing += 1
+            continue
         if is_protected(r):
-            raise ValueError("One of the folders to scan is a protected system folder.")
+            name = os.path.basename(r.rstrip(os.sep)) or r
+            raise BadRequest(f"'{name}' is a protected system folder and is never scanned.", "protected",
+                             "Remove it from the list, or pick a folder inside your user folder.")
         if not any(within(r, o) for o in out):
             out = [o for o in out if not within(o, r)] + [r]   # drop roots nested in other roots
+    if report is not None and missing:
+        report["missing_root"] = report.get("missing_root", 0) + missing
     if not out:
-        raise ValueError("Choose at least one folder or drive to scan.")
+        if missing:
+            msg = ("The folder to scan was not found (it was moved, renamed, or its drive is unplugged)." if missing == 1
+                   else "None of the folders to scan were found (moved, renamed, or the drive is unplugged).")
+            raise BadRequest(msg, "not_found", "Plug the drive back in, or remove the folder and add it again.")
+        raise BadRequest(NOTHING_SELECTED, "nothing_selected", "Tick a drive or add a folder on the Scan page.")
     return out
 
 
@@ -81,6 +130,29 @@ class _Walk:
         self.job, self.skip, self.dest_roots = job, [os.path.normcase(s) for s in skip], [os.path.normcase(d) for d in dest_roots]
         self.lock, self.sink = threading.Lock(), queue.Queue()
         self.queues, self.never_project = [], never_project()
+        self.fatal = None          # set by the writer when the index cannot be written: every worker stops
+
+    def stopping(self):
+        return self.job._cancel or self.fatal is not None
+
+    def skip_item(self, reason, n=1):
+        """Why: nothing is dropped silently: every skipped folder or file is counted with its reason."""
+        with self.lock:
+            sk = self.job.extra["skipped"]
+            sk[reason] = sk.get(reason, 0) + n
+            if reason == "no_access":
+                self.job.extra["noaccess"] += n
+            elif reason in ("unreadable", "vanished"):
+                self.job.extra["unreadable"] += n
+
+    @staticmethod
+    def reason_for(ex):
+        """Why: one mapping from OS errors to the reasons shown in the UI."""
+        if isinstance(ex, PermissionError):
+            return "no_access"
+        if isinstance(ex, (FileNotFoundError, NotADirectoryError)):
+            return "vanished"
+        return "unreadable"
 
     def skipped(self, path):
         p = os.path.normcase(path)
@@ -115,20 +187,21 @@ class _Walk:
     def scan_dir(self, item, q, drive, dev):
         """Why: list one folder; files go to the writer, sub-folders back onto the queue."""
         d, project = item
+        if not storable(d):
+            self.skip_item("bad_name")
+            return
         try:
             entries = list(os.scandir(d))
-        except PermissionError:
-            with self.lock:
-                self.job.extra["noaccess"] += 1
-            return
-        except OSError:
-            with self.lock:
-                self.job.extra["unreadable"] += 1
+        except OSError as ex:              # no permission, folder removed mid-scan, drive unplugged...
+            self.skip_item(self.reason_for(ex))
             return
         if project is None and os.path.dirname(d) != d and os.path.normcase(d) not in self.never_project                 and is_project({e.name for e in entries}):
             project = d
         files, nsub, nbytes, by_cat = [], 0, 0, collections.Counter()
         for e in entries:
+            if not storable(e.name):
+                self.skip_item("bad_name")
+                continue
             try:
                 st = e.stat(follow_symlinks=False)
                 if is_reparse_or_link(st):
@@ -153,7 +226,8 @@ class _Walk:
                     files.append((name, ext, cat, sub, st.st_size, st.st_mtime, created_time(st), st.st_atime, flags))
                     nbytes += st.st_size
                     by_cat[cat] += 1
-            except OSError:
+            except OSError as ex:          # the file vanished or is locked between listing and stat
+                self.skip_item(self.reason_for(ex))
                 continue
         self.sink.put((d, project, self.kind_for(d, project), drive, dev, nsub, files))
         self.count(d, files, nbytes, by_cat, drive)
@@ -191,15 +265,20 @@ class _Walk:
                 except queue.Empty:
                     continue
                 try:
-                    if not job._cancel:
+                    if not self.stopping():
                         job._run.wait()
-                        if not job._cancel:
+                        if not self.stopping():
                             self.scan_dir(item, q, drive, dev)
-                except Exception:  # noqa: BLE001 - one bad folder must not stop the scan
-                    log.exception("scan: folder failed")
+                except Exception:  # noqa: BLE001 - one bad folder must not stop the scan: counted and logged with its traceback
+                    log.exception("scan: a folder failed and was skipped")
+                    self.skip_item("error")
                 finally:
                     q.task_done()
-        media = drive_media(drive)
+        try:
+            media = drive_media(drive)
+        except Exception:  # noqa: BLE001 - a drive that stops answering is scanned with the default pool size
+            log.exception("scan: drive type could not be read")
+            media = "unknown"
         self.job.extra.setdefault("media", {})[drive] = media
         threads = [threading.Thread(target=worker, daemon=True, name="scan-worker") for _ in range(config.SCAN_WORKERS.get(media, config.SCAN_WORKERS_PER_DRIVE))]
         for t in threads:
@@ -210,32 +289,66 @@ class _Walk:
             t.join()
 
 
-def _writer(walk, scan_id, done_evt):
-    """Why: one thread owns all SQLite writes for the scan (batched transactions)."""
-    w = index_db.ScanWriter(scan_id)
-    last = time.time()
-    while True:
-        try:
-            item = walk.sink.get(timeout=QUEUE_POLL_S)
-        except queue.Empty:
-            if done_evt.is_set() and walk.sink.empty():
-                break
-            item = None
-        with index_db.write_lock():
-            if item:
-                w.add(*item)
-            if time.time() - last > WRITER_FLUSH_S:
+def _writer(walk, scan_id, done_evt, result):
+    """Why: one thread owns all SQLite writes for the scan (batched transactions). It never dies silently: a folder that
+    can't be stored is skipped and counted; a database failure (locked, disk full, damaged) is handed to the scan as fatal."""
+    try:
+        w = index_db.ScanWriter(scan_id)
+        result["w"] = w
+        last = time.time()
+        while walk.fatal is None:
+            try:
+                item = walk.sink.get(timeout=QUEUE_POLL_S)
+            except queue.Empty:
+                if done_evt.is_set() and walk.sink.empty():
+                    break
+                item = None
+            with index_db.write_lock():
+                if item:
+                    try:
+                        w.add(*item)
+                    except (sqlite3.IntegrityError, ValueError, OverflowError) as ex:   # one bad row: skip that folder only
+                        log.warning("scan: a folder could not be stored and was skipped (%s)", type(ex).__name__)
+                        walk.skip_item("error")
+                if time.time() - last > WRITER_FLUSH_S:
+                    w.commit()
+                    last = time.time()
+        if walk.fatal is None:
+            with index_db.write_lock():
                 w.commit()
-                last = time.time()
-    with index_db.write_lock():
-        w.commit()
-    return w
+    except Exception as ex:  # noqa: BLE001 - sqlite3 errors and anything unexpected: stop the scan with a clear reason
+        log.exception("scan: writing the file index failed")
+        walk.fatal = ex
+
+
+def _step(job, name):
+    """Why: a failure report says which step failed ('reading folders', 'writing the index'...), never a bare exception name."""
+    job.extra["step"] = name
 
 
 def _run(job, roots, skip):
     """Why: the whole scan: group roots by drive, walk drives in parallel, write, prune, snapshot, log."""
     ex = job.extra
-    scan_id = index_db.begin_scan(ex["mode"], roots)
+    _step(job, "starting")
+    try:
+        scan_id = index_db.begin_scan(ex["mode"], roots)
+    except sqlite3.Error as e:
+        raise index_failure(e, "starting") from e
+    try:
+        _scan(job, roots, skip, scan_id)
+    except jobs.Cancelled:
+        raise                              # already recorded as cancelled
+    except BaseException:
+        try:
+            index_db.end_scan(scan_id, "cancelled" if job._cancel else "error", ex["found"], ex["bytes"], ex["noaccess"])
+        except sqlite3.Error:
+            log.exception("scan: could not record the scan's end")
+        raise
+
+
+def _scan(job, roots, skip, scan_id):
+    """Why: the walk itself (see _run for the bookkeeping around it)."""
+    ex = job.extra
     walk = _Walk(job, skip, settings.load()["dest_roots"])
     groups = collections.defaultdict(list)
     for r in roots:
@@ -248,25 +361,31 @@ def _run(job, roots, skip):
         ex["drive_stats"][drive] = dict(root=drive, used=used, scanned=0, whole=any(os.path.dirname(r) == r for r in groups[drive]))
     done_evt = threading.Event()
     result = {}
-    wt = threading.Thread(target=lambda: result.update(w=_writer(walk, scan_id, done_evt)), daemon=True, name="scan-writer")
+    wt = threading.Thread(target=_writer, args=(walk, scan_id, done_evt, result), daemon=True, name="scan-writer")
     wt.start()
+    _step(job, "reading folders")
     walkers = [threading.Thread(target=walk.walk_drive, args=(rs, d), daemon=True, name="scan-drive") for d, rs in groups.items()]
     for t in walkers:
         t.start()
     for t in walkers:
         t.join()
     done_evt.set()
+    _step(job, "writing the index")
     wt.join()
+    if walk.fatal is not None:
+        raise index_failure(walk.fatal, "writing the index") from walk.fatal
     cancelled = job._cancel
-    with index_db.write_lock():
-        result["w"].finish(prune=not cancelled)
-    state = "cancelled" if cancelled else "done"
-    index_db.end_scan(scan_id, state, ex["found"], ex["bytes"], ex["noaccess"])
+    _step(job, "finishing")
+    try:
+        with index_db.write_lock():
+            result["w"].finish(prune=not cancelled)
+        index_db.end_scan(scan_id, "cancelled" if cancelled else "done", ex["found"], ex["bytes"], ex["noaccess"])
+    except sqlite3.Error as e:
+        log.exception("scan: finishing the file index failed")
+        raise index_failure(e, "finishing") from e
     if not cancelled:
         threading.Thread(target=_warm_caches, daemon=True, name="warm").start()
-        _snapshots(groups)
-        history.record("scan", mode=ex["mode"], count=ex["found"], size=ex["bytes"], roots=len(roots), noaccess=ex["noaccess"],
-                       label="Quick Scan" if ex["mode"] == "quick" else "Deep Scan")
+        _after_scan(groups, roots, ex)
     job.total = max(job.total, ex["found"])
     job.done = ex["found"]
     if cancelled:
@@ -281,6 +400,19 @@ def _warm_caches():
         index_db.facets({"scope": "all"})
     except Exception:  # noqa: BLE001 - warming is best effort
         log.exception("cache warm-up failed")
+
+
+def _after_scan(groups, roots, ex):
+    """Why: the storage-trend snapshot and the History entry are extras: if they fail the scan itself still succeeded."""
+    try:
+        _snapshots(groups)
+    except Exception:  # noqa: BLE001 - logged with traceback; the new index is already saved
+        log.exception("scan: storage snapshot failed")
+    try:
+        history.record("scan", mode=ex["mode"], count=ex["found"], size=ex["bytes"], roots=len(roots), noaccess=ex["noaccess"],
+                       label="Quick Scan" if ex["mode"] == "quick" else "Deep Scan")
+    except Exception:  # noqa: BLE001 - same: History is a record of the scan, not part of it
+        log.exception("scan: History entry could not be written")
 
 
 def _snapshots(groups):
@@ -301,11 +433,12 @@ def start(mode, roots, skip, est_files=0):
     if jobs.running("scan"):
         raise ValueError("A scan is already running.")
     if mode not in ("quick", "deep"):
-        raise ValueError("Unknown scan mode.")
-    roots = clean_roots(quick_roots() if mode == "quick" and not roots else roots)
+        raise BadRequest("Unknown scan mode. Use Quick Scan or Deep Scan.", "bad_mode")
+    skipped = {}
+    roots = clean_roots(quick_roots() if mode == "quick" and not roots else roots, skipped)
     skip = [canonical(s) for s in skip]
     job = jobs.Job("scan", total=int(est_files or 0), mode=mode, roots=roots, found=0, bytes=0, dirs=0, queued=0, noaccess=0,
-                   unreadable=0, by_cat={}, recent=[], drive_stats={})
+                   unreadable=0, by_cat={}, recent=[], drive_stats={}, skipped=skipped, step="starting")
     CURRENT["job"] = job
     return jobs.start(job, _run, roots, skip)
 
@@ -313,7 +446,7 @@ def start(mode, roots, skip, est_files=0):
 # ---------------- estimate ----------------
 def estimate(roots, seconds=config.ESTIMATE_BENCH_SECONDS):
     """Why: before scanning, a short files/second benchmark + used space gives an honest time range."""
-    roots = clean_roots(roots)
+    roots = clean_roots(roots, {})
     t0, files, nbytes, dirs = time.time(), 0, 0, 0
     stack, complete = list(roots), True
     while stack:
@@ -346,12 +479,20 @@ def estimate(roots, seconds=config.ESTIMATE_BENCH_SECONDS):
     else:
         whole = [r for r in roots if os.path.dirname(r) == r]
         avg = nbytes / files if files else config.DEFAULT_AVG_FILE_BYTES
-        used = sum(shutil.disk_usage(r).used for r in whole) if whole else 0
+        used = sum(_used(r) for r in whole)
         est_files = max(files * (1 + len(stack) / max(dirs, 1)), used / max(avg, 1) if used else 0)
     scan_rate = max(rate * 0.8, 1.0)   # writing the index costs roughly a fifth of the walking speed
     secs = est_files / scan_rate
     return dict(files_per_s=round(rate), est_files=int(est_files), complete=complete, sample_files=files, sample_seconds=round(elapsed, 2),
                 low_s=round(secs * config.ESTIMATE_LOW_FACTOR), high_s=round(max(secs * config.ESTIMATE_HIGH_FACTOR, 1)))
+
+
+def _used(root):
+    """Why: a drive unplugged during the estimate counts as empty instead of failing the request."""
+    try:
+        return shutil.disk_usage(root).used
+    except OSError:
+        return 0
 
 
 def status():
@@ -367,6 +508,9 @@ def status():
         drives.append(dict(root=d["root"], used=d["used"], scanned=d["scanned"], pct=100.0 if snap["state"] == "done" else pct))
     snap["drives"] = drives
     snap.pop("drive_stats", None)
+    sk = snap.get("skipped") or {}
+    snap["skipped_total"] = sum(sk.values())
+    snap["skipped_reasons"] = [dict(code=k, label=config.SCAN_SKIP_REASONS.get(k, k), n=v) for k, v in sorted(sk.items(), key=lambda kv: -kv[1])]
     if snap["state"] == "done":
         snap["pct"] = 100.0
     elif job.total:

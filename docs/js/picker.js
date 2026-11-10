@@ -11,7 +11,7 @@ const Picker = {
   },
   async go(path, quiet) { // Why: browse one level; errors (no access, unplugged) become a friendly message, not a crash
     try { this.st.data = await API.browse(path); this.st.focus = 0; this.st.naming = false; this.render() }
-    catch (e) { if (!quiet) toast(friendly(e), 'err'); if (!this.st.data) this.go('') }
+    catch (e) { if (!quiet) toastError(e); if (!this.st.data) this.go('') }
   },
   sep(p) { return String(p).includes('\\') ? '\\' : '/' },
   under(child, parent) { // Why: "included via parent" (case-insensitive, separator-aware)
@@ -36,7 +36,7 @@ const Picker = {
       : `<button class="btn ghost" data-a="pk-cancel">Cancel</button><button class="btn" data-a="pk-done" ${sel.size ? '' : 'disabled'}>${ic('plus')} ${mode === 'skip' ? 'Add to skip list' : 'Add to scan list'}</button>`
         + (mode === 'scan' ? `<button class="btn pri" data-a="pk-start" ${sel.size ? '' : 'disabled'}>${ic('play')} Add &amp; start scan</button>` : '');
     const box = $('#modal .mbox');
-    box.innerHTML = `<div class="pk-head"><h2>${esc(title)}</h2>${crumbs}</div>
+    box.innerHTML = `<div class="pk-head"><h2>${esc(title)}</h2>${crumbs}</div>${data.missing ? `<p class="note pk-missing">${ic('info')}<span>The folder <b>${esc(data.missing)}</b> does not exist yet. ${dest ? 'Create it with New folder, or pick another folder.' : 'Pick another folder.'}</span></p>` : ''}
       <div class="pk-list" role="listbox" aria-multiselectable="${!dest}" tabindex="0" id="pk-list">${data.parent != null && data.path ? `<div class="pk-row"><button class="pk-open" data-a="pk-go" data-p="${esc(data.parent)}">${ic('up')}<b>Up one level</b></button></div>` : ''}${rows}</div>
       <div class="pk-foot">${dest ? `<span class="mut">Selected: <b>${esc(data.path || 'choose a folder')}</b></span>` : `<div class="row between"><b>${sel.size} folder${sel.size === 1 ? '' : 's'} selected</b><span class="mut">Tick folders, or open one with its name.</span></div><div class="chips">${chips || '<span class="mut">Nothing selected yet.</span>'}</div>`}
       <div class="row" data-css="justify-content:flex-end">${btns}</div></div>`;
@@ -46,7 +46,7 @@ const Picker = {
     const name = ($('#pk-name') || {}).value || '';
     if (!name.trim()) { toast('Type a name for the new folder.', 'err'); return }
     try { const r = await API.mkdir(this.st.data.path, name.trim()); toast('Folder created', 'ok'); await this.go(r.path) }
-    catch (e) { toast(friendly(e), 'err'); $('#pk-name') && $('#pk-name').focus() }
+    catch (e) { toastError(e); $('#pk-name') && $('#pk-name').focus() }
   },
   tick(path, on) { if (on) { for (const s of [...this.st.sel]) if (this.under(s, path)) this.st.sel.delete(s); this.st.sel.add(path) } else this.st.sel.delete(path); this.render() },
   finish(start) { const done = this.st.onDone, paths = this.st.mode === 'dest' ? [this.st.data.path] : [...this.st.sel]; closeModal(); done(paths, start) },

@@ -17,11 +17,46 @@ function renderUser() { // Why: the OS user name is read locally and shown only 
 }
 
 /* ---------------- feedback ---------------- */
-function toast(m, kind = '') {
+function toast(m, kind = '', actions = '') {
   const t = $('#toast'); t.className = kind;
-  t.innerHTML = ic(kind === 'err' ? 'alert' : kind === 'ok' ? 'check' : 'info') + `<span>${esc(m)}</span>`;
-  t.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => t.hidden = true, kind === 'err' ? TOAST_ERR_MS : TOAST_MS);
+  t.innerHTML = ic(kind === 'err' ? 'alert' : kind === 'ok' ? 'check' : 'info') + `<span>${esc(m)}</span>` + (actions ? `<span class="t-acts">${actions}<button class="t-x" data-a="toast-close" aria-label="Close">${ic('x')}</button></span>` : '');
+  t.hidden = false; clearTimeout(toast.h);
+  const hide = () => { toast.h = setTimeout(() => t.hidden = true, actions ? TOAST_ACTION_MS : kind === 'err' ? TOAST_ERR_MS : TOAST_MS) };
+  t.onmouseenter = () => clearTimeout(toast.h); t.onmouseleave = hide; hide();
 }
+ACT['toast-close'] = () => { $('#toast').hidden = true };
+
+/* ---------------- errors: a short human message, "Try again", and a safe "Copy details" report ---------------- */
+function toastError(e, { retry = null, what = '', paths = [] } = {}) { // Why: never a bare exception name; always a way forward
+  ERR.last = { e, what, paths };
+  ERR.retry = retry;
+  toast(friendly(e) + (e && e.hint && !ERROR_TEXT[e.code] ? ' ' + e.hint : ''), 'err',
+    `${retry ? '<button class="btn sm" data-a="err-retry">Try again</button>' : ''}<button class="btn sm ghost" data-a="err-details">Copy details</button>`);
+}
+const ERR = { last: null, retry: null };
+function errorReport({ e, what = '', paths = [] }, withPaths = false) { // Why: what a bug report needs, nothing from your disk unless you tick it
+  const f = (e && e.failure) || {}, info = S.info || {};
+  const lines = [`${APP.name} error report`, `App version: ${info.version || '?'}`, `System: ${info.os_name || info.os || '?'}${info.python ? ', Python ' + info.python : ''}`,
+    `Browser: ${(navigator.userAgent.match(/(Edg|Chrome|Firefox|Version)\/[\d.]+/g) || ['?']).join(' ')}`,
+    `What: ${what || f.kind || 'request'}${f.step || (e && e.step) ? ' (step: ' + (f.step || e.step) + ')' : ''}`,
+    `Error: ${f.type || (e && e.status ? 'HTTP ' + e.status : 'Error')}${f.code || (e && e.code) ? ', code ' + (f.code || e.code) : ''}`,
+    `Message: ${f.message || (e && e.message) || ''}`, `Time: ${new Date().toISOString()}`, `Log file: ${info.log_file || '~/.aurasort/logs/server.log'}`];
+  if (withPaths && paths.length) lines.push('Folders chosen:', ...paths.map(p => '  ' + p));
+  return lines.join('\n');
+}
+function showErrorDetails(ctx) {
+  const box = modal(`<h2>Error details</h2><p class="mut">Paste this into a GitHub issue or a message. It has no file names or folders from your PC unless you tick the box. Full details are in the log file shown below.</p>
+    <pre class="pv-text err-report" id="err-text"></pre>
+    ${ctx.paths && ctx.paths.length ? '<label class="row" data-css="margin-top:10px"><input type="checkbox" id="err-paths"> <span>Include the folders I chose</span></label>' : ''}
+    <div class="row" data-css="margin-top:16px;justify-content:flex-end"><button class="btn ghost" data-a="err-close">Close</button><button class="btn pri" data-a="err-copy">Copy details</button></div>`, 'err-box');
+  applyCss(box);
+  const fill = () => { $('#err-text').textContent = errorReport(ctx, !!($('#err-paths') && $('#err-paths').checked)) };
+  fill(); const c = $('#err-paths'); if (c) c.onchange = fill;
+}
+ACT['err-retry'] = () => { $('#toast').hidden = true; const r = ERR.retry; ERR.retry = null; if (r) r() };
+ACT['err-details'] = () => { $('#toast').hidden = true; if (ERR.last) showErrorDetails(ERR.last) };
+ACT['err-close'] = () => closeModal();
+ACT['err-copy'] = async () => { const ok = await copyText($('#err-text').textContent); toast(ok ? 'Details copied.' : 'Select the text and copy it with Ctrl+C.', ok ? 'ok' : '') };
 function loadNotes() { try { S.notes = JSON.parse(localStorage.getItem(NOTES_KEY) || '[]').slice(0, NOTES_MAX) } catch (e) { S.notes = [] } renderBell() }
 function notify(title, body = '', icon = 'bell') { // Why: the bell lists events such as "Scan finished"
   S.notes.unshift({ title, body, icon, time: Date.now() / 1000, unread: true }); S.notes = S.notes.slice(0, NOTES_MAX);

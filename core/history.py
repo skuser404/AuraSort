@@ -63,6 +63,8 @@ def path_for(hid):
 def save(m):
     """Why: atomic write (temp + replace) so a crash never leaves a half-written undo manifest."""
     p = path_for(m["id"])
+    if not p.parent.is_dir():
+        ensure_dirs()                  # the data folder was removed while the app ran (e.g. by a cleaner tool)
     tmp = p.with_suffix(".tmp")
     tmp.write_text(json.dumps(m), encoding="utf-8")
     os.replace(tmp, p)
@@ -78,11 +80,12 @@ def load(hid):
     return json.loads(p.read_text(encoding="utf-8"))
 
 
-def summary(m):
-    """Why: the history list and Recent Activity only need a compact description of each entry."""
-    ops = m.get("ops", [])
+def summary(m, fallback_id=""):
+    """Why: the history list and Recent Activity only need a compact description of each entry. Entries written by
+    earlier versions may lack fields (even the id), so every field has a default."""
+    ops = [o for o in (m.get("ops") or []) if isinstance(o, dict)]
     kind = m.get("kind") or m.get("mode", "move")
-    return dict(id=m["id"], kind=kind, time=m.get("time", 0), dest=m.get("dest", ""), undone=m.get("undone", False),
+    return dict(id=m.get("id") or fallback_id, kind=kind, time=m.get("time", 0), dest=m.get("dest", ""), undone=m.get("undone", False),
                 count=m.get("count", len(ops)), size=m.get("size", sum(o.get("size", 0) for o in ops)),
                 failed=m.get("failed", 0), imported=m.get("imported", False), undoable=kind in UNDOABLE and not m.get("undone"),
                 label=m.get("label", ""), state=m.get("state", "done"))
@@ -93,9 +96,14 @@ def entries(limit=config.HISTORY_LIST_MAX, kinds=None):
     out = []
     for f in sorted(config.HISTORY_DIR.glob("*.json"), key=lambda f: f.name, reverse=True):
         try:
-            s = summary(json.loads(f.read_text(encoding="utf-8")))
-        except (OSError, ValueError, KeyError):
+            m = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            log.warning("history: an entry could not be read and was skipped")
             continue
+        if not isinstance(m, dict):
+            log.warning("history: an entry has an unknown format and was skipped")
+            continue
+        s = summary(m, f.stem)
         if kinds and s["kind"] not in kinds:
             continue
         out.append(s)

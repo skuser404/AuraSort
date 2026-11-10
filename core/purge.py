@@ -34,9 +34,10 @@ def delete_all():
             if f.exists() and _inside_data(f):
                 f.unlink()
             removed.append(label)
-        for f in config.DATA_DIR.glob(config.LOG_FILE.name + "*"):
-            if _inside_data(f):
-                f.unlink()
+        for folder in {config.LOG_FILE.parent, config.DATA_DIR}:   # logs/server.log*, plus the old aurasort.log* of earlier versions
+            for f in list(folder.glob(config.LOG_FILE.name + "*")) + list(folder.glob(f"{config.APP_SLUG}.log*")):
+                if _inside_data(f) and f.is_file():
+                    f.unlink()
         removed.append("log")
     finally:
         history.ensure_dirs()

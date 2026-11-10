@@ -379,7 +379,7 @@ button.rank { cursor: pointer }
 .pk-foot .chips { max-height: 92px; overflow: auto }
 
 /* ---------- modal, toast, tooltip, drawer ---------- */
-#modal { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 20px; background: var(--scrim); animation: fadeIn .25s ease both }
+#modal { position: fixed; inset: 0; z-index: 75;   /* above the move stage (70): its Undo/Cancel confirmations must be clickable */ display: flex; align-items: center; justify-content: center; padding: 20px; background: var(--scrim); animation: fadeIn .25s ease both }
 @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
 .mbox { width: min(680px, 100%); max-height: 88vh; overflow: auto; background: var(--card-solid); animation: pop .25s var(--ease) both }
 .mbox h2 { margin-bottom: 10px }
@@ -732,3 +732,14 @@ body.gated { overflow: hidden }
 .foot .link { font-weight: 500 }
 .gate-card label.row { flex-wrap: nowrap; align-items: flex-start } .gate-card label.row input { margin-top: 2px }
 .md-meta { color: var(--mut); font-size: 13px; margin: 0 0 2px }
+
+/* error toast actions and the "Copy details" report */
+#toast .t-acts { display: flex; gap: 6px; align-items: center; margin-left: 6px; flex-shrink: 0 }
+#toast .t-x { background: none; border: 0; color: var(--mut); cursor: pointer; padding: 4px; display: inline-flex; border-radius: 6px }
+#toast .t-x:hover { color: var(--txt) }
+#toast .t-x .i { color: inherit; width: 14px; height: 14px }
+.err-report { max-height: 260px; overflow: auto; white-space: pre-wrap; word-break: break-word; font-size: 12.5px; margin-top: 12px }
+.scan-fail { margin-top: 14px }
+.scan-fail .row { margin-top: 10px; gap: 8px; flex-wrap: wrap }
+.start-help { margin: 10px 0 0 }
+.pk-missing { margin: 10px 0 0; padding: 10px 12px; font-size: 13.5px }

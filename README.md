@@ -207,6 +207,9 @@ medical documents. See [AI_DATA_NOTICE.md](AI_DATA_NOTICE.md).
 | "This page belongs to an older server session" | You restarted AuraSort. Reload the page. |
 | Ollama is not detected | Make sure it is running (`ollama list` in a terminal works), then press *Test connection*. LM Studio: start its local server. |
 | A copy says "in use by another program" | Close the program using the file and try again; the original was not touched. |
+| A scan or action stopped with an error | Press *Copy details* on the message and paste it into a GitHub issue. It contains the app version, OS, step and error code, and no file names unless you tick the box. The full log is `~/.aurasort/logs/server.log` (on Windows `%USERPROFILE%\.aurasort\logs\server.log`). |
+| "AuraSort is already running" | Only one copy can use your data folder at a time; the running one opens instead. Close its terminal window to stop it. |
+| "N skipped" after a scan | Folders you have no permission for, files removed during the scan, or names the index cannot store are counted, not fatal. The scan page lists the reasons. |
 
 When asking for help on GitHub, **do not paste personal file names, full paths with your user name, API keys or
 screenshots of private documents.**
@@ -218,10 +221,14 @@ python -m unittest discover -s tests -t .          # unit tests (standard librar
 python -m bandit -q -r core server.py tools        # security linter (pip install bandit)
 python tools/make_fixtures.py ../fixture           # a fake home folder for manual and end-to-end tests
 node tests/e2e/app.e2e.mjs --home ../fixture/home --out out    # browser tests (Node 22+, Edge or Chrome)
+npm install playwright && node tests/e2e/full.pw.mjs --home ../fixture/home   # whole app via Playwright (test-only dependency)
 python tools/benchmark.py                          # scan/search benchmark on generated files
 python tools/bench_copy.py <folder>                # copy engine vs shutil.copy2 (prints measured numbers)
 ```
 
+- Start the server with `AURASORT_STRICT_SCHEMA=1` for browser tests: a request field the server does not know is then
+  refused (400), so a renamed field fails a test instead of being ignored. The request contract is in
+  [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#request-contract-front-end---server). Logs: `~/.aurasort/logs/server.log`.
 - Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Security: [SECURITY.md](SECURITY.md) and
   [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md). Contributing: [CONTRIBUTING.md](CONTRIBUTING.md).
 - Front end: plain HTML/CSS/JS in `docs/` (no build step), served by the app and as a demo on GitHub Pages

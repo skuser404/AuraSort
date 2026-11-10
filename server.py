@@ -18,7 +18,7 @@ import webbrowser
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
-from core import (checks, classify, config, copier, dates, docai, extract, hardware, history, index_db, jobs, keystore, llm, mover, platform_utils, purge, scanner, sensitive,
+from core import (checks, classify, config, copier, dates, docai, extract, hardware, history, index_db, instance, jobs, keystore, llm, mover, platform_utils, purge, scanner, schema, sensitive,
                   settings, signing, trash)
 from core.log import add_secret, log, setup as setup_log
 from core.safety import canonical, check_destination, is_plain_file, protection_reason, safe_folder_name
@@ -103,7 +103,11 @@ def with_links(rows):
 
 def require_file(fid):
     """Why: unknown ids are a 404, never a crash."""
-    row = index_db.file_by_id(int(fid))
+    try:
+        fid = int(fid)
+    except (TypeError, ValueError):
+        raise ApiError(400, "That file id is not valid.", "bad_type") from None
+    row = index_db.file_by_id(fid)
     if not row:
         raise ApiError(404, "That file is no longer in the index. Scan again.")
     return row
@@ -118,7 +122,8 @@ def r_info(h, qs, b):
                      dest=settings.load()["dest"] or platform_utils.default_destination(), pil=bool(Image),
                      user=platform_utils.user_display_name(), admin=platform_utils.is_admin(),
                      created_supported=platform_utils.CREATED_SUPPORTED, created_note=platform_utils.CREATED_NOTE,
-                     has_index=index_db.last_scan() is not None))
+                     has_index=index_db.last_scan() is not None, log_file=config.LOG_FILE_SHOWN,
+                     os_name=platform_utils.OS_NAME, python=platform_utils.PYTHON_VERSION))
 
 
 @route(R, "GET", "drives")
@@ -137,8 +142,16 @@ def r_browse(h, qs, b):
                   for d in platform_utils.list_drives() if d.get("ready")]
         return h.send(200, dict(path="", parent=None, crumbs=[], dirs=quick + drives))
     path = canonical(path)
+    missing = ""
+    if not os.path.isdir(path):        # e.g. the default AuraSortFiles before the first move: open the nearest folder that exists
+        missing, p = path, os.path.dirname(path)
+        while not os.path.isdir(p) and os.path.dirname(p) != p:
+            p = os.path.dirname(p)
+        if not os.path.isdir(p):
+            raise ApiError(404, "That folder (and its drive) is not available.", "not_found", "Plug the drive in, or choose another folder.")
+        path = p
     if protection_reason(path):
-        raise ApiError(400, "That folder is protected and can't be opened here.")
+        raise ApiError(400, "That folder is protected and can't be opened here.", "protected")
     try:
         out = []
         for e in sorted(os.scandir(path), key=lambda x: x.name.lower()):
@@ -156,7 +169,8 @@ def r_browse(h, qs, b):
             break
         p = parent
     parent = os.path.dirname(path)
-    return h.send(200, dict(path=path, parent=parent if parent != path else "", crumbs=crumbs[::-1], dirs=out))
+    return h.send(200, dict(path=path, parent=parent if parent != path else "", crumbs=crumbs[::-1], dirs=out,
+                          missing=os.path.basename(missing.rstrip(os.sep)) if missing else ""))
 
 
 @route(R, "GET", "settings")
@@ -185,16 +199,16 @@ def r_disk(h, qs, b):
 @route(R, "POST", "scan/estimate")
 def r_scan_estimate(h, qs, b):
     """Why: 'Estimated scan time: ~X-Y min' from a short benchmark + used space."""
-    roots = b.get("roots") or (scanner.quick_roots() if b.get("mode", "quick") == "quick" else [])
-    h.send(200, scanner.estimate(roots))
+    req = schema.scan_request(b)
+    h.send(200, scanner.estimate((req["roots"] or scanner.quick_roots()) if req["mode"] == "quick" else req["roots"]))
 
 
 @route(R, "POST", "scan/start")
 def r_scan_start(h, qs, b):
     """Why: Quick Scan (user folders) or Deep Scan (chosen drives/folders) in the background."""
-    mode, roots, skip = b.get("mode", "quick"), b.get("roots", []), b.get("skip", [])
-    settings.update(mode=mode if mode in ("quick", "deep") else "quick", skip=skip, **({"roots": roots} if mode == "deep" else {}))
-    job = scanner.start(mode, roots, skip, est_files=int(b.get("est_files") or 0))
+    req = schema.scan_request(b)
+    job = scanner.start(req["mode"], req["roots"], req["skip"], est_files=req["est_files"])
+    settings.update(mode=req["mode"], skip=req["skip"], **({"roots": req["roots"]} if req["mode"] == "deep" else {}))   # remembered once the scan really started
     h.send(200, {"job": job.id})
 
 
@@ -261,7 +275,7 @@ def r_file_ids(h, qs, b):
 @route(R, "POST", "rows")
 def r_rows(h, qs, b):
     """Why: the search worker ranks ids; the page's rows (paths, flags) come from the server."""
-    h.send(200, with_links(index_db.rows_by_ids(b.get("ids", [])[:config.PAGE_SIZE * 5])))
+    h.send(200, with_links(index_db.rows_by_ids(schema.id_list(b, max_items=config.PAGE_SIZE * 5))))
 
 
 @route(R, "GET", "extensions")
@@ -289,7 +303,7 @@ def r_folders_include(h, qs, b):
     preset = b.get("preset")
     if preset not in (None, "safe", "none", "all"):
         raise ApiError(400, "Unknown preset.")
-    index_db.set_included(ids=b.get("ids"), preset=preset, value=bool(b.get("included", True)))
+    index_db.set_included(ids=schema.id_list(b) if b.get("ids") is not None else None, preset=preset, value=bool(b.get("included", True)))
     h.send(200, {"ok": True})
 
 
@@ -441,8 +455,8 @@ def r_open(h, qs, b):
 @route(R, "POST", "reveal")
 def r_reveal(h, qs, b):
     """Why: 'Open location' / 'Open destination' (paths come from the index or our own manifest only)."""
-    if "job" in b:
-        dest = history.load(b["job"]).get("dest", "")
+    if b.get("job"):
+        dest = str(history.load(schema.text(b, "job")).get("dest") or "")
         if not os.path.isdir(dest):
             raise ApiError(400, "That destination folder no longer exists.")
         platform_utils.open_folder(dest)
@@ -473,10 +487,13 @@ def r_plan(h, qs, b):
     """Why: exact preview of what a move would do (counts, sub-folders, source folders, cross-drive bytes)."""
     dev = None
     if b.get("dest"):
-        p = os.path.abspath(str(b["dest"]))
+        p = os.path.abspath(schema.norm_path(b.get("dest"), "dest"))
         while not os.path.exists(p) and os.path.dirname(p) != p:
             p = os.path.dirname(p)
-        dev = os.stat(p).st_dev
+        try:
+            dev = os.stat(p).st_dev
+        except OSError:
+            dev = None   # the destination drive is gone: the preview counts every file as a copy
     h.send(200, index_db.plan(_plan_filters(b), dev))
 
 
@@ -510,10 +527,7 @@ def _by_cat(ops):
 
 def _ids(b):
     """Why: selections arrive as explicit ids (never paths) and must not be empty."""
-    ids = [int(i) for i in (b.get("ids") or [])]
-    if not ids:
-        raise ApiError(400, "Nothing is selected.")
-    return ids
+    return schema.id_list(b, required=True)
 
 
 @route(R, "POST", "execute")
@@ -585,7 +599,7 @@ def _gb(n):
 @route(R, "POST", "integrity/start")
 def r_integrity_start(h, qs, b):
     """Why: Integrity Check (quick: structure; deep: reads every byte) on all files or the selected ones, read-only."""
-    ids = [int(i) for i in b["ids"]] if b.get("ids") else None
+    ids = schema.id_list(b) or None
     h.send(200, {"job": checks.start_integrity(b.get("mode", "quick"), ids).id})
 
 
@@ -704,7 +718,7 @@ def r_interrupted_clean(h, qs, b):
 @route(R, "POST", "selection")
 def r_selection(h, qs, b):
     """Why: the confirmation dialog says exactly what a selection holds before anything happens."""
-    stats = index_db.selection_stats([int(i) for i in (b.get("ids") or [])])
+    stats = index_db.selection_stats(schema.id_list(b))
     no_bin = {d for d in {g[2] for g in stats["groups"]} if d and not trash.bin_available(d)}
     stats["no_bin"] = sum(g[3] for g in stats["groups"] if g[2] in no_bin)
     stats["optin"] = settings.load()["optin"]
@@ -828,7 +842,7 @@ def r_ai_status(h, qs, b):
 def r_ai_settings(h, qs, b):
     """Why: consent, engine, model and limits (never the API key, which has its own route)."""
     cur = dict(docai.ai_settings())
-    cur.update({k: v for k, v in (b.get("settings") or {}).items() if k in settings.AI_DEFAULTS and not k.startswith("consent")})
+    cur.update({k: v for k, v in schema.obj(b, "settings").items() if k in settings.AI_DEFAULTS and not k.startswith("consent")})
     if b.get("accept_local"):
         cur["consent_local"] = time.time()
     if b.get("accept_cloud"):
@@ -879,7 +893,7 @@ def r_ai_pull(h, qs, b):
 @route(R, "POST", "ai/start")
 def r_ai_start(h, qs, b):
     """Why: read the selected documents (or every document) in the background."""
-    ids = [int(i) for i in b["ids"]] if b.get("ids") else None
+    ids = schema.id_list(b) or None
     h.send(200, {"job": docai.start(ids, b.get("mode", "local")).id})
 
 
@@ -976,12 +990,23 @@ def main():
     a = ap.parse_args()
     if a.host not in config.LOCAL_HOSTNAMES:
         sys.exit(f"{config.APP_NAME} only listens on 127.0.0.1 (refusing {a.host!r}).")
+    setup_log()
+    if not instance.acquire():
+        port = instance.running_port()
+        url = f"http://localhost:{port}/" if port else ""
+        print(f"\n  {config.APP_NAME} is already running{' at ' + url if url else ''}.\n"
+              "  Only one copy can use your data folder at a time (two would fight over the file index).\n", flush=True)
+        if url and not a.no_browser:
+            webbrowser.open(url)
+        sys.exit(0)
     prepare()
     Handler.token = secrets.token_urlsafe(config.TOKEN_BYTES)
     add_secret(Handler.token)
     srv, port = make_server(a.port)
+    instance.remember_port(port)
     url = f"http://localhost:{port}/"
-    print(f"\n  {config.APP_NAME} - {config.TAGLINE}\n  running at {url}\n  (local only - press Ctrl+C to stop)\n", flush=True)
+    print(f"\n  {config.APP_NAME} - {config.TAGLINE}\n  running at {url}\n  (local only - press Ctrl+C to stop)\n"
+          f"  Log file: {config.LOG_FILE}\n", flush=True)
     if platform_utils.is_admin():
         print("  Warning: running as Administrator/root. Run it as a normal user unless you really need to.\n", flush=True)
         log.warning("running with administrator/root rights")

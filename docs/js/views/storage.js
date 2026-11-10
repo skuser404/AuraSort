@@ -78,10 +78,10 @@ CH.inc = async t => { // Why: ticking a project or asset folder needs an explici
       body: `<p><b>${esc(row.path)}</b></p><p>${row.kind === 'project' ? 'Files inside a project (website, app, video edit…) belong to it. Moving them can break the project.' : row.kind === 'sorted' ? 'These files were already sorted by ' + esc(APP.name) + '.' : 'This looks like app or website assets. Moving them can break that app or site.'}</p>`, check: 'I understand the risk' });
     if (!ok) { t.checked = false; return }
   }
-  try { await API.include({ ids: [id], included: on }); if (row) row.included = on; await refreshIndex() } catch (e) { t.checked = !on; toast(friendly(e), 'err') }
+  try { await API.include({ ids: [id], included: on }); if (row) row.included = on; await refreshIndex() } catch (e) { t.checked = !on; toastError(e) }
 };
 ACT['inc-preset'] = async t => {
   const p = t.dataset.p;
   if (p === 'all' && !await confirmDialog({ title: 'Include every folder, projects too?', danger: true, ok: 'Include all', body: 'Moving files out of projects can break websites, apps and video edits.', check: 'I understand the risk' })) return;
-  try { await API.include({ preset: p }); await refreshIndex(); loadFolders(); toast(p === 'safe' ? 'Safe folders selected' : p === 'none' ? 'All folders unticked' : 'All folders selected', 'ok') } catch (e) { toast(friendly(e), 'err') }
+  try { await API.include({ preset: p }); await refreshIndex(); loadFolders(); toast(p === 'safe' ? 'Safe folders selected' : p === 'none' ? 'All folders unticked' : 'All folders selected', 'ok') } catch (e) { toastError(e) }
 };

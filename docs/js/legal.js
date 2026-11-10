@@ -109,5 +109,5 @@ ACT['del-data'] = async () => {
     body: `<p>This removes ${esc(APP.name)}'s own data from this computer:</p><ul class="plain-list"><li>the file index and scan snapshots</li><li>History and Undo logs (moves can no longer be undone)</li>
       <li>thumbnails, settings and the log</li><li>Document Insights results and a saved API key</li></ul><p><b>Your own files are not touched</b>, and files ${esc(APP.name)} moved stay where they are.</p>` })) return;
   try { const r = await API.deleteData(); toast(`Deleted: ${r.removed.join(', ')}.`, 'ok'); S.settings = await API.settings(); await refreshIndex(); go('dashboard') }
-  catch (e) { toast(friendly(e), 'err') }
+  catch (e) { toastError(e) }
 };

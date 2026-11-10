@@ -51,7 +51,7 @@ function aiFirstRun() {
 CH['ai-consent'] = t => { $('#ai-enable').disabled = !t.checked };
 ACT['ai-enable'] = async () => {
   if (!$('#ai-consent').checked) return;
-  try { await API.aiSettings({ accept_local: true }); const where = ($('input[name=ai-where]:checked') || {}).value; await loadAI(); if (where === 'cloud') aiConnect() } catch (e) { toast(friendly(e), 'err') }
+  try { await API.aiSettings({ accept_local: true }); const where = ($('input[name=ai-where]:checked') || {}).value; await loadAI(); if (where === 'cloud') aiConnect() } catch (e) { toastError(e) }
 };
 
 /* ---------------- engine, hardware, cloud ---------------- */
@@ -81,13 +81,13 @@ function aiHardwareCard(st) {
 }
 CH['ai-engine'] = async t => { await saveAI({ engine: t.value, model: '' }); loadAI() };
 CH['ai-model'] = async t => { await saveAI({ model: t.value }); loadAI() };
-async function saveAI(part) { try { AI.st.settings = await API.aiSettings({ settings: part }) } catch (e) { toast(friendly(e), 'err') } }
-ACT['ai-test'] = async () => { try { const r = await API.aiTest({ mode: 'local' }); toast(`Connected. ${fmt(r.models.length)} models found.`, 'ok'); loadAI() } catch (e) { toast(friendly(e), 'err') } };
-ACT['ai-start-engine'] = async t => { t.disabled = true; t.textContent = 'Starting…'; try { await API.aiStartEngine(); await sleep(2500); loadAI() } catch (e) { toast(friendly(e), 'err'); t.disabled = false } };
+async function saveAI(part) { try { AI.st.settings = await API.aiSettings({ settings: part }) } catch (e) { toastError(e) } }
+ACT['ai-test'] = async () => { try { const r = await API.aiTest({ mode: 'local' }); toast(`Connected. ${fmt(r.models.length)} models found.`, 'ok'); loadAI() } catch (e) { toastError(e) } };
+ACT['ai-start-engine'] = async t => { t.disabled = true; t.textContent = 'Starting…'; try { await API.aiStartEngine(); await sleep(2500); loadAI() } catch (e) { toastError(e); t.disabled = false } };
 ACT['ai-pull'] = async t => {
   const m = t.dataset.m;
   if (!await confirmDialog({ title: `Download ${m}?`, ok: 'Download', body: `<p>Ollama downloads the model from its own servers. Small models are about 1 to 5 GB; the exact size appears as soon as the download starts. You can cancel it.</p>` })) return;
-  try { const r = await API.aiPull(m); pullProgress(r.job, m) } catch (e) { toast(friendly(e), 'err') }
+  try { const r = await API.aiPull(m); pullProgress(r.job, m) } catch (e) { toastError(e) }
 };
 async function pullProgress(jid, m) {
   modal(`<h2>Downloading ${esc(m)}</h2><div class="meter" data-css="margin:16px 0 8px"><i id="pl-bar" data-css="width:0%"></i></div><p class="mut num" id="pl-txt">Starting…</p><div class="row" data-css="justify-content:flex-end"><button class="btn ghost" data-a="pl-cancel" data-j="${esc(jid)}">Cancel</button></div>`);
@@ -98,7 +98,7 @@ async function pullProgress(jid, m) {
     await sleep(800);
   }
 }
-ACT['pl-cancel'] = t => API.jobControl(t.dataset.j, 'cancel').then(() => toast('Download cancelled.')).catch(e => toast(friendly(e), 'err'));
+ACT['pl-cancel'] = t => API.jobControl(t.dataset.j, 'cancel').then(() => toast('Download cancelled.')).catch(e => toastError(e));
 
 function aiConnect() { // Why: API keys, not passwords; a clear privacy warning; an explicit consent for the cloud
   const s = AI.st.settings, p = AI.st.presets;
@@ -125,7 +125,7 @@ async function cloudSave(test) {
     $('#cl-key').value = '';
     if (test) { const r = await API.aiTest({ mode: 'cloud' }); toast(`Connected. ${fmt(r.models.length)} models available.`, 'ok') }
     return true;
-  } catch (e) { toast(friendly(e), 'err'); return false }
+  } catch (e) { toastError(e); return false }
 }
 ACT['ai-connect'] = () => aiConnect();
 ACT['cl-test'] = () => cloudSave(true);
@@ -144,7 +144,7 @@ function aiRunCard(st) {
 }
 ACT['ai-go'] = async () => {
   const scope = ($('input[name=ai-scope]:checked') || {}).value, mode = ($('input[name=ai-mode]:checked') || {}).value || 'rules';
-  try { const r = await API.aiStart({ mode, ids: scope === 'sel' ? Sel.ids() : null }); AI.job = r.job; pollAI() } catch (e) { toast(friendly(e), 'err') }
+  try { const r = await API.aiStart({ mode, ids: scope === 'sel' ? Sel.ids() : null }); AI.job = r.job; pollAI() } catch (e) { toastError(e) }
 };
 async function pollAI() { // Why: patient, honest progress ("Reading 214 of 1,030 documents, about 38 min left")
   const go = $('#ai-go'); if (go) go.hidden = true;
@@ -166,7 +166,7 @@ async function pollAI() { // Why: patient, honest progress ("Reading 214 of 1,03
     }
   } finally { pollAI.on = false }
 }
-ACT['ai-ctl'] = t => API.jobControl(AI.job, t.dataset.c).catch(e => toast(friendly(e), 'err'));
+ACT['ai-ctl'] = t => API.jobControl(AI.job, t.dataset.c).catch(e => toastError(e));
 function cloudConfirm(j) { // Why: nothing goes to the cloud until the user sees exactly what will be sent, for this batch
   const p = j.cloud_plan;
   modal(`<h2>Send ${fmt(p.files - p.confidential)} documents to the cloud API?</h2>
@@ -174,7 +174,7 @@ function cloudConfirm(j) { // Why: nothing goes to the cloud until the user sees
       <div><dt>Masked</dt><dd>Card, account, PAN, Aadhaar and similar numbers, e-mail addresses and phone numbers are replaced before sending</dd></div><div><dt>Never sent</dt><dd>File paths, other files, the files themselves</dd></div></dl>
     ${p.confidential ? `<label class="row" data-css="margin:10px 0"><input type="checkbox" id="cc-conf"> <span>Also send the ${fmt(p.confidential)} Confidential files (not recommended)</span></label>` : ''}
     <div class="row" data-css="justify-content:flex-end;margin-top:14px"><button class="btn ghost" data-a="cc-stop">Do not send</button><button class="btn pri" data-a="cc-send" id="cc-send">Send</button></div>`);
-  ACT['cc-send'] = async () => { const conf = !!($('#cc-conf') && $('#cc-conf').checked); closeModal(); try { await API.aiConfirm(AI.job, conf) } catch (e) { toast(friendly(e), 'err') } };
+  ACT['cc-send'] = async () => { const conf = !!($('#cc-conf') && $('#cc-conf').checked); closeModal(); try { await API.aiConfirm(AI.job, conf) } catch (e) { toastError(e) } };
   ACT['cc-stop'] = async () => { closeModal(); try { await API.jobControl(AI.job, 'cancel') } catch (e) { /* ignore */ } };
 }
 
@@ -216,16 +216,16 @@ function tickClock() { // Why: a visible countdown until the results clear thems
 }
 ACT['ai-sens'] = t => { S.F.sens = t.dataset.k; S.page = 1; loadAIResults(); syncURL('replace') };
 ACT['ai-pg'] = t => { S.page = Math.max(1, +t.dataset.p); loadAIResults() };
-ACT['ai-clear'] = async () => { try { await API.aiClear(); toast('Results cleared.', 'ok'); loadAIResults() } catch (e) { toast(friendly(e), 'err') } };
+ACT['ai-clear'] = async () => { try { await API.aiClear(); toast('Results cleared.', 'ok'); loadAIResults() } catch (e) { toastError(e) } };
 CH['ai-type'] = t => { S.aiType = t.value; S.page = 1; loadAIResults() };
 CH['ai-junk'] = t => { S.aiJunk = t.checked; S.page = 1; loadAIResults() };
 CH['ai-q'] = t => { S.F.q = t.value.slice(0, 100); clearTimeout(CH.aq); CH.aq = setTimeout(() => { S.page = 1; loadAIResults() }, FILTER_DEBOUNCE_MS) };
 ACT['ai-private'] = async () => { // Why: a safe, undoable move of the confidential files into one private folder
-  let ids; try { ids = (await API.aiIds(aiParams({ sens: 'confidential', page: '', per: '' }))).ids } catch (e) { toast(friendly(e), 'err'); return }
+  let ids; try { ids = (await API.aiIds(aiParams({ sens: 'confidential', page: '', per: '' }))).ids } catch (e) { toastError(e); return }
   const root = (S.settings && S.settings.dest) || (S.info && S.info.dest) || '';
-  try { await API.mkdir(root, 'Private').catch(e => { if (!/already exists/i.test(e.message)) throw e }) } catch (e) { toast(friendly(e), 'err'); return }
+  try { await API.mkdir(root, 'Private').catch(e => { if (!/already exists/i.test(e.message)) throw e }) } catch (e) { toastError(e); return }
   const dest = joinPath(root, 'Private'), st = await preflight(ids); if (!st) return;
   const r = await actionDialog('move', ids, dest, st, null); if (!r) return;
   try { const x = await API.execute({ ids, dest, mode: 'move', layout: r.layout, allow_project: r.allow_project, allow_viewonly: r.allow_viewonly }); if (x.count) Stage.open({ n: x.count, by_cat: x.by_cat }, x.job, { mode: 'move', dest, back: 'insights', fromSelection: true }) }
-  catch (e) { toast(friendly(e), 'err') }
+  catch (e) { toastError(e) }
 };

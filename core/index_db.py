@@ -7,6 +7,7 @@ import time
 import unicodedata
 
 from . import classify, config, dates
+from .log import log
 from .platform_utils import make_private
 
 SCHEMA = """
@@ -58,20 +59,87 @@ def norm_lower(name):
 def _connect():
     """Why: WAL lets the UI read while a scan writes; NORMAL sync is safe in WAL and much faster."""
     conn = sqlite3.connect(str(config.INDEX_DB), timeout=30, check_same_thread=False)
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA synchronous=NORMAL")
-    conn.execute("PRAGMA temp_store=MEMORY")
-    conn.execute("PRAGMA cache_size=-32000")
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA temp_store=MEMORY")
+        conn.execute("PRAGMA cache_size=-32000")
+    except sqlite3.Error:
+        conn.close()                   # a damaged file must not stay open (Windows could not rename or delete it)
+        raise
     return conn
 
 
+# Tables the next scan rebuilds completely; an outdated one is recreated. The others (scan list, storage trend) are kept.
+REBUILDABLE = ("files", "dirs", "projects", "integrity", "hashes")
+
+
+def expected_columns():
+    """Why: the schema text is the single source of truth; compare against it instead of a second hand-written list."""
+    m = sqlite3.connect(":memory:")
+    try:
+        m.executescript(SCHEMA)
+        tables = [t for (t,) in m.execute("SELECT name FROM sqlite_master WHERE type='table'")]
+        return {t: [(r[1], r[2]) for r in m.execute(f"PRAGMA table_info({t})")] for t in tables}  # nosec B608  # names come from our own schema
+    finally:
+        m.close()
+
+
+def migrate(c):
+    """Why: an index written by an earlier version can lack columns (e.g. 'lpath'); writing to it would fail in the middle of a
+    scan. Outdated index tables are recreated (the scan refills them); other tables get the missing columns added."""
+    have = {t for (t,) in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    changed, rebuild = [], False
+    for table, cols in expected_columns().items():
+        if table not in have:
+            continue
+        current = {r[1] for r in c.execute(f"PRAGMA table_info({table})")}  # nosec B608  # table names come from our own schema
+        missing = [(n, t) for n, t in cols if n not in current]
+        if not missing:
+            continue
+        changed.append(table)
+        if table in REBUILDABLE:
+            rebuild = True
+        else:
+            for name, typ in missing:
+                c.execute(f"ALTER TABLE {table} ADD COLUMN {name} {typ}")  # nosec B608  # identifiers come from our own schema
+    if rebuild:
+        for table in REBUILDABLE:
+            c.execute(f"DROP TABLE IF EXISTS {table}")  # nosec B608  # fixed tuple above
+    if changed:
+        c.commit()
+        log.warning("index from an earlier version updated (%s)%s", ", ".join(changed), "; run a scan to rebuild it" if rebuild else "")
+    return changed
+
+
+def _set_aside_broken():
+    """Why: a damaged index file (not a database at all) would stop every scan; it is only a cache, so it is renamed and rebuilt."""
+    _writer.clear()
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    for suffix in ("", "-wal", "-shm"):
+        p = str(config.INDEX_DB) + suffix
+        if os.path.exists(p):
+            os.replace(p, f"{config.INDEX_DB}.broken-{stamp}{suffix}")
+    log.warning("the file index was damaged; it was renamed to index.sqlite3.broken-%s and a new one was created", stamp)
+
+
 def init():
-    """Why: create the schema once and keep the database (and its WAL files) readable by the user only."""
+    """Why: create (or update) the schema once and keep the database (and its WAL files) readable by the user only."""
     config.DATA_DIR.mkdir(parents=True, exist_ok=True)
     fresh = not config.INDEX_DB.exists()
     with _write_lock:
-        w = writer()
-        w.executescript(SCHEMA)
+        try:
+            w = writer()
+            migrate(w)
+            w.executescript(SCHEMA)
+        except sqlite3.DatabaseError as ex:
+            if "not a database" not in str(ex) and "malformed" not in str(ex):
+                raise
+            close_all()                    # Windows can't rename a file this process still has open
+            _set_aside_broken()
+            fresh = True
+            w = writer()
+            w.executescript(SCHEMA)
         w.commit()
     if fresh:
         for suffix in ("", "-wal", "-shm"):

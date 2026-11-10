@@ -14,7 +14,7 @@ from core import config  # noqa: E402
 class TempHomeCase(unittest.TestCase):
     """Why: tests create files, histories and indexes; isolate them from the user's real data."""
 
-    _PATCHED = ("HOME", "DATA_DIR", "HISTORY_DIR", "INDEX_DB", "THUMB_DIR", "SETTINGS_FILE", "LOG_FILE", "LEGACY_DATA_DIRS")
+    _PATCHED = ("HOME", "DATA_DIR", "HISTORY_DIR", "INDEX_DB", "THUMB_DIR", "SETTINGS_FILE", "LOG_DIR", "LOG_FILE", "LEGACY_DATA_DIRS")
 
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="aurasort-test-"))
@@ -27,7 +27,8 @@ class TempHomeCase(unittest.TestCase):
         config.INDEX_DB = config.DATA_DIR / "index.sqlite3"
         config.THUMB_DIR = config.DATA_DIR / "thumbs"
         config.SETTINGS_FILE = config.DATA_DIR / "settings.json"
-        config.LOG_FILE = config.DATA_DIR / "test.log"
+        config.LOG_DIR = config.DATA_DIR / "logs"
+        config.LOG_FILE = config.LOG_DIR / "test.log"
         config.LEGACY_DATA_DIRS = (self.home / ".old-app",)
         config.HISTORY_DIR.mkdir(parents=True)
         config.THUMB_DIR.mkdir(parents=True)

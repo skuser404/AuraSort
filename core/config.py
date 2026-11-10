@@ -40,9 +40,12 @@ HISTORY_DIR = DATA_DIR / "history"
 INDEX_DB = DATA_DIR / "index.sqlite3"
 THUMB_DIR = DATA_DIR / "thumbs"
 SETTINGS_FILE = DATA_DIR / "settings.json"
-LOG_FILE = DATA_DIR / f"{APP_SLUG}.log"
+LOG_DIR = DATA_DIR / "logs"
+LOG_FILE = LOG_DIR / "server.log"
 LOG_MAX_BYTES = 1024 * 1024
 LOG_BACKUPS = 3
+LOG_FILE_SHOWN = f"~/.{APP_SLUG}/logs/server.log"   # how the log location is shown to people (no user name in it)
+LOCK_FILE_NAME = "server.lock"     # one running AuraSort per data folder (two servers would fight over the index)
 # Earlier versions of this app kept their history here; it is copied (read-only) into HISTORY_DIR once.
 LEGACY_DATA_DIRS = (HOME / ".neon-tidy", HOME / ".aurelia")
 DEST_FOLDER_NAME = "AuraSortFiles"
@@ -54,6 +57,13 @@ SCAN_WORKERS = {"ssd": 6, "hdd": 2, "usb": 2, "network": 2, "unknown": 3}   # th
 CLOUD_ATTRS = 0x1000 | 0x40000 | 0x400000   # Windows OFFLINE | RECALL_ON_OPEN | RECALL_ON_DATA_ACCESS (OneDrive "online-only")
 MAC_DATALESS = 0x40000000          # macOS SF_DATALESS (iCloud placeholder)
 SCAN_BATCH_ROWS = 2000             # rows written to SQLite per transaction
+MAX_PATH_CHARS = 32767             # longest path Windows accepts (long-path prefix included)
+SCAN_MAX_ROOTS = 200               # drives + folders in one scan request
+SCAN_SKIP_REASONS = {              # why an item was left out of a scan (counted, shown, never fatal)
+    "no_access": "no permission", "vanished": "removed during the scan", "unreadable": "could not be read",
+    "bad_name": "name the index cannot store", "missing_root": "folder not found", "error": "unexpected problem (see the log)",
+}
+SCHEMA_STRICT_ENV = "AURASORT_STRICT_SCHEMA"   # tests set this: unknown request fields are refused instead of logged
 SCAN_STATUS_RECENT_DIRS = 6        # folder paths shown in the live ticker
 ESTIMATE_BENCH_SECONDS = 2.5       # files/second benchmark before a scan
 ESTIMATE_LOW_FACTOR = 0.7          # ETA range shown as an honest estimate

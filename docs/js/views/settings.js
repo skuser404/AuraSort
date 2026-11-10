@@ -35,17 +35,17 @@ async function loadAISettings() { // Why: limits and the results timer for Docum
     <p class="mut">Turned on: ${s.consent_local ? esc(dtt(s.consent_local)) : 'no'}. Cloud allowed: ${s.consent_cloud ? esc(dtt(s.consent_cloud)) : 'no'}. API key: ${s.key_saved ? 'saved in the keychain' : s.key_in_session ? 'this session only' : 'none'}.</p>
     <button class="btn danger" data-a="set-ai-reset">Withdraw consent and reset AI settings</button>`;
 }
-CH['set-ai-ttl'] = t => API.aiSettings({ settings: { ttl_min: +t.value } }).then(() => toast('Saved. Applies to the next batch.', 'ok')).catch(e => toast(friendly(e), 'err'));
-CH['set-ai-num'] = t => API.aiSettings({ settings: { [t.dataset.k]: +t.value } }).then(() => toast('Saved', 'ok')).catch(e => toast(friendly(e), 'err'));
-CH['set-ai-cpu'] = t => API.aiSettings({ settings: { cpu_friendly: t.checked } }).then(() => toast('Saved', 'ok')).catch(e => toast(friendly(e), 'err'));
+CH['set-ai-ttl'] = t => API.aiSettings({ settings: { ttl_min: +t.value } }).then(() => toast('Saved. Applies to the next batch.', 'ok')).catch(e => toastError(e));
+CH['set-ai-num'] = t => API.aiSettings({ settings: { [t.dataset.k]: +t.value } }).then(() => toast('Saved', 'ok')).catch(e => toastError(e));
+CH['set-ai-cpu'] = t => API.aiSettings({ settings: { cpu_friendly: t.checked } }).then(() => toast('Saved', 'ok')).catch(e => toastError(e));
 ACT['set-ai-reset'] = async () => {
   if (!await confirmDialog({ title: 'Withdraw consent and reset?', danger: true, ok: 'Reset', body: '<p>Document Insights is turned off, its settings go back to defaults, any saved API key is removed (from memory and the keychain), and current results are cleared. Your files are not touched.</p>' })) return;
-  try { await API.aiReset(); toast('Document Insights is off and reset.', 'ok'); render(false) } catch (e) { toast(friendly(e), 'err') }
+  try { await API.aiReset(); toast('Document Insights is off and reset.', 'ok'); render(false) } catch (e) { toastError(e) }
 };
 ACT['set-pick-dest'] = () => Picker.open({ mode: 'dest', title: 'Choose the default destination', onDone: p => { if (p[0]) $('#set-dest').value = p[0] } });
-ACT['set-save-dest'] = async () => { try { S.settings = await API.saveSettings({ dest: $('#set-dest').value.trim() }); if (S.mv) S.mv.dest = S.settings.dest; toast('Destination saved', 'ok') } catch (e) { toast(friendly(e), 'err') } };
-ACT['set-pick-skip'] = () => Picker.open({ mode: 'skip', title: 'Choose folders to skip', selected: (S.settings || {}).skip || [], onDone: async paths => { try { S.settings = await API.saveSettings({ skip: paths }); if (S.setup) S.setup.skip = paths; render(false) } catch (e) { toast(friendly(e), 'err') } } });
-ACT['set-rm-skip'] = async t => { const skip = ((S.settings || {}).skip || []).slice(); skip.splice(+t.dataset.i, 1); try { S.settings = await API.saveSettings({ skip }); if (S.setup) S.setup.skip = skip; render(false) } catch (e) { toast(friendly(e), 'err') } };
+ACT['set-save-dest'] = async () => { try { S.settings = await API.saveSettings({ dest: $('#set-dest').value.trim() }); if (S.mv) S.mv.dest = S.settings.dest; toast('Destination saved', 'ok') } catch (e) { toastError(e) } };
+ACT['set-pick-skip'] = () => Picker.open({ mode: 'skip', title: 'Choose folders to skip', selected: (S.settings || {}).skip || [], onDone: async paths => { try { S.settings = await API.saveSettings({ skip: paths }); if (S.setup) S.setup.skip = paths; render(false) } catch (e) { toastError(e) } } });
+ACT['set-rm-skip'] = async t => { const skip = ((S.settings || {}).skip || []).slice(); skip.splice(+t.dataset.i, 1); try { S.settings = await API.saveSettings({ skip }); if (S.setup) S.setup.skip = skip; render(false) } catch (e) { toastError(e) } };
 
 function viewHelp(v) {
   const sec = (i, t, body) => `<section class="card help-sec"><h2>${t}</h2><div class="mut">${body}</div></section>`;

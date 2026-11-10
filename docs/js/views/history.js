@@ -26,20 +26,20 @@ async function viewHistory(v) {
         ${x.dest && x.kind !== 'scan' ? `<button class="btn sm ghost" data-a="openjob" data-id="${esc(x.id)}" title="Open destination" aria-label="Open destination">${ic('external')}</button>` : ''}</div></td></tr>`).join('')}
     </tbody></table></div></div>` : empty('history', 'Nothing here yet', 'Scans, moves, copies and Recycle Bin actions appear here. Moves can be undone.', `<button class="btn pri" data-a="nav" data-v="${S.hasIndex ? 'move' : 'scan'}">${S.hasIndex ? 'Sort files' : 'Scan my PC'}</button>`));
 }
-ACT['int-resume'] = async t => { try { const r = await API.resume(t.dataset.id); Stage.open({ n: r.count, by_cat: r.by_cat }, r.job, { mode: 'move', dest: '', back: 'history' }) } catch (e) { toast(friendly(e), 'err') } };
+ACT['int-resume'] = async t => { try { const r = await API.resume(t.dataset.id); Stage.open({ n: r.count, by_cat: r.by_cat }, r.job, { mode: 'move', dest: '', back: 'history' }) } catch (e) { toastError(e) } };
 ACT['int-clean'] = async t => {
   if (!await confirmDialog({ title: 'Clean up?', ok: 'Clean up', body: `<p>Partial copies left by the stopped job go to the ${esc(binName())}. Your original files are not touched, and the job is closed.</p>` })) return;
-  try { const r = await API.cleanInterrupted(t.dataset.id); toast(`Cleaned up ${fmt(r.removed)} partial ${r.removed === 1 ? 'copy' : 'copies'}.`, 'ok'); render(false) } catch (e) { toast(friendly(e), 'err') }
+  try { const r = await API.cleanInterrupted(t.dataset.id); toast(`Cleaned up ${fmt(r.removed)} partial ${r.removed === 1 ? 'copy' : 'copies'}.`, 'ok'); render(false) } catch (e) { toastError(e) }
 };
 ACT.undo = async t => {
   if (!await confirmDialog({ title: 'Undo this move?', body: 'Files go back to where they came from. If a file with the same name exists there now, the restored one gets “(1)” added. Nothing is overwritten.', ok: 'Undo' })) return;
-  try { const r = await API.undo(t.dataset.id); toast(`Restored ${fmt(r.restored)} files${r.missing ? `, ${fmt(r.missing)} missing` : ''}`, 'ok'); await refreshIndex(); render(false) } catch (e) { toast(friendly(e), 'err') }
+  try { const r = await API.undo(t.dataset.id); toast(`Restored ${fmt(r.restored)} files${r.missing ? `, ${fmt(r.missing)} missing` : ''}`, 'ok'); await refreshIndex(); render(false) } catch (e) { toastError(e) }
 };
 ACT.histinfo = async t => { // Why: exactly which files an action touched, and where they went
-  let d; try { d = await API.historyItem(t.dataset.id) } catch (e) { toast(friendly(e), 'err'); return }
+  let d; try { d = await API.historyItem(t.dataset.id) } catch (e) { toastError(e); return }
   modal(`<h2>${esc(histLabel(d))}</h2><p class="mut">${esc(dtt(d.time))}${d.size ? ` · ${sz(d.size)}` : ''}</p>
     <div class="hist-ops">${d.ops.map(o => `<div>${pathHtml(o.src)}${o.dst ? `<span class="hist-sub">→ ${esc(o.dst)}</span>` : ''}</div>`).join('')}${d.more ? `<div class="mut">and ${fmt(d.more)} more</div>` : ''}</div>
     <div class="row" data-css="justify-content:flex-end;margin-top:16px"><button class="btn pri" data-a="cf-no">Close</button></div>`);
   ACT['cf-no'] = () => closeModal();
 };
-ACT.openjob = t => API.revealJob(t.dataset.id).then(r => r && r.demo && toast('Demo: this would open the destination folder.')).catch(e => toast(friendly(e), 'err'));
+ACT.openjob = t => API.revealJob(t.dataset.id).then(r => r && r.demo && toast('Demo: this would open the destination folder.')).catch(e => toastError(e));

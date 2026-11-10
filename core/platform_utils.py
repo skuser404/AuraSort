@@ -259,6 +259,26 @@ def _linux_drive(dev, mount, fs):
                 ready=use is not None, recycle_bin=True, **(use or {}))
 
 
+def _os_name():
+    """Why: the OS name for error reports, read WITHOUT the platform module's system()/release(): on Windows those query
+    WMI through _wmi.pyd, which can crash the whole Python process when two request threads call it at once."""
+    try:
+        if WIN:
+            v = sys.getwindowsversion()
+            return f"Windows {'11' if v.major == 10 and v.build >= 22000 else v.major} (build {v.build})"
+        if MAC:
+            import platform as _platform   # mac_ver() reads a plist file; it never touches WMI
+            return f"macOS {_platform.mac_ver()[0] or ''}".strip()
+        return f"{os.uname().sysname} {os.uname().release}"
+    except (OSError, AttributeError, ValueError):
+        return "unknown"
+
+
+OS_NAME = _os_name()
+PYTHON_VERSION = ".".join(str(n) for n in sys.version_info[:3])
+DRIVE_BLANK = dict(id="", root="", name="Drive", type="unknown", fs="", ready=False, recycle_bin=False, total=0, used=0, free=0)
+
+
 def list_drives():
     """Why: the scan screen lists every drive; each probe has a timeout so an unplugged/dead drive can't hang the UI."""
     if WIN:
@@ -273,10 +293,14 @@ def list_drives():
         for fut, args in futs:
             try:
                 out.append(fut.result(timeout=DRIVE_INFO_TIMEOUT_S))
-            except Exception:  # noqa: BLE001 - one broken drive must not hide the others
+            except Exception as ex:  # noqa: BLE001 - one broken drive must not hide the others
                 root = f"{args[0]}:\\" if WIN else args[-2] if len(args) > 1 else args[0]
+                if isinstance(ex, concurrent.futures.TimeoutError):
+                    log.warning("drive %s did not answer in %s s (unplugged or asleep)", root, DRIVE_INFO_TIMEOUT_S)
+                else:
+                    log.warning("drive %s could not be read", root, exc_info=True)
                 out.append(dict(id=root, root=root, name="Not responding", type="unknown", fs="", ready=False, recycle_bin=False))
-    return out
+    return [{**DRIVE_BLANK, **d} for d in out]   # every record has every key, even for a drive that is not ready
 
 
 def drive_of(path):

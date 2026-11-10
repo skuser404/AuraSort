@@ -6,6 +6,10 @@ import time
 from . import config
 
 
+KIND_LABELS = {"scan": "scan", "move": "move", "trash": "move to the Recycle Bin", "integrity": "integrity check",
+               "duplicates": "duplicate search", "docai": "Document Insights batch", "pull": "model download"}
+
+
 class Cancelled(Exception):
     """Why: raised inside a worker loop when the user cancels, so cleanup code runs once."""
 
@@ -26,6 +30,7 @@ class Job:
         self._mark = (self.started, 0, 0)
         self._paused_s, self._paused_at = 0.0, None
         self.lock = threading.Lock()
+        self.failure = None
 
     # ---- control ----
     def pause(self):
@@ -56,6 +61,20 @@ class Job:
     def error(self, msg):
         if len(self.errors) < 50:
             self.errors.append(msg)
+
+    def fail(self, ex):
+        """Why: a failed job tells the person what happened in plain words (never "KeyError") and keeps a safe report:
+        error type, step and code, without file names, for the "Copy details" button."""
+        from .web import friendly_error   # our own errors carry friendly text; technical ones don't
+        own_code = getattr(ex, "code", "")
+        own_code = own_code if isinstance(own_code, str) else ""        # e.g. HTTPError.code is a number, not ours
+        friendly = isinstance(ex, ValueError) and friendly_error(ex) != "Invalid request."
+        code = own_code or ("invalid" if friendly else "internal")
+        hint = (getattr(ex, "hint", "") if own_code else "") or (f"Details are in the log file: {config.LOG_FILE_SHOWN}" if code == "internal" else "")
+        msg = str(ex) if (own_code or friendly) else f"The {KIND_LABELS.get(self.kind, self.kind)} stopped because of an unexpected problem."
+        self.failure = dict(code=code, message=msg, hint=hint, type=type(ex).__name__, step=getattr(ex, "step", "") or self.extra.get("step", ""))
+        self.error(msg)
+        self.finish("error")
 
     # ---- progress ----
     def elapsed(self):
@@ -92,7 +111,7 @@ class Job:
                     total_bytes=self.total_bytes, elapsed=round(el, 1), remaining=None if rem is None else round(rem, 1),
                     rate=round(self.done / el, 1) if el > 0 else 0, bytes_rate=round(self.bytes / el) if el > 0 else 0,
                     pct=round(100 * self.done / self.total, 1) if self.total else (100.0 if self.state == "done" else 0.0),
-                    current_file=self.current_file, errors=list(self.errors))
+                    current_file=self.current_file, errors=list(self.errors), failure=self.failure)
         for k, v in list(self.extra.items()):
             snap[k] = list(v) if isinstance(v, list) else dict(v) if isinstance(v, dict) else v
         return snap
@@ -114,11 +133,10 @@ def start(job, target, *args):
                 job.finish("done")
         except Cancelled:
             job.finish("cancelled")
-        except Exception as ex:  # noqa: BLE001 - reported to the UI, details go to the log
+        except Exception as ex:  # noqa: BLE001 - reported to the UI in plain words, the full traceback goes to the log
             from .log import log
-            log.exception("job %s failed", job.kind)
-            job.error(f"Unexpected error ({type(ex).__name__}).")
-            job.finish("error")
+            log.exception("job %s failed at step %r", job.kind, job.extra.get("step", ""))
+            job.fail(ex)
     threading.Thread(target=runner, daemon=True, name=f"job-{job.kind}").start()
     return job
 

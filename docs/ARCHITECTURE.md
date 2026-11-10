@@ -14,7 +14,9 @@ browser (docs/)  --fetch + X-AuraSort-Token-->  server.py (routes)  -->  core/* 
 | Module | Job |
 |---|---|
 | `web.py` | HTTP plumbing: Host/Origin/Sec-Fetch-Site checks, token, rate limits, body limit, security headers, gzip, static files, streaming with HTTP ranges. |
-| `server.py` | Routes only: validates input and calls the modules below. |
+| `server.py` | Routes only: validates input (through `schema.py`) and calls the modules below. |
+| `schema.py` | The request contract: the fields every POST route reads, typed helpers with defaults, and 400 errors with a code and a hint. |
+| `instance.py` | One server per data folder (an OS file lock); a second start opens the running one instead of fighting over the index. |
 | `config.py` | Every constant (limits, timings, names, model suggestions). |
 | `scanner.py` | Background scan: one small thread pool per drive (sized by drive media: SSD/HDD/USB/network), `os.scandir` reusing `DirEntry.stat()`, a single SQLite writer thread, project detection, cloud-placeholder flags, live counts and an ETA. |
 | `index_db.py` | SQLite index (WAL): files, folders, projects, snapshots, integrity results, hashes. Server-side filter, sort and pagination, facets, cached summaries, the search index for the browser worker, and updates after moves (lists stay correct without a rescan). |
@@ -33,7 +35,40 @@ browser (docs/)  --fetch + X-AuraSort-Token-->  server.py (routes)  -->  core/* 
 
 ### Data
 Everything lives in `~/.aurasort` (user-only permissions): `index.sqlite3`, `history/*.json`, `thumbs/`, `settings.json`,
-`aurasort.log`. Document Insights results are **never** written there: they stay in the server's memory.
+`logs/server.log`. Document Insights results are **never** written there: they stay in the server's memory.
+`index_db.init()` updates an index written by an earlier version (outdated index tables are recreated and refilled by the
+next scan; the scan list and storage snapshots get missing columns added) and sets aside a damaged index file as
+`index.sqlite3.broken-<time>`. Settings and History entries from earlier versions are read with defaults for every field.
+
+### Request contract (front end <-> server)
+Every POST body is a JSON object. `core/schema.py` lists the fields each route reads (`POST_FIELDS`); unknown fields are
+logged, and refused with a 400 when `AURASORT_STRICT_SCHEMA=1` (all test suites run that way). Ids are numbers, paths
+are absolute strings, lists default to `[]`. `tests/test_contract.py` runs the real request builders from `docs/js` in
+Node and checks every request against this table, and every response field the UI reads against what the server sends.
+
+The scan request (`POST /api/scan/start`, built only by `scanRequest()` in `docs/js/views/scan.js`):
+
+| Field | Type | Default | Rules |
+|---|---|---|---|
+| `mode` | `"quick"` or `"deep"` | `"quick"` | anything else: 400 `bad_mode` |
+| `roots` | list of absolute paths (ticked drives + added folders) | `[]` | Quick Scan with `[]` = the usual folders; Deep Scan with `[]` = 400 `nothing_selected` ("Pick at least one drive or folder."). On Windows `C:` means `C:\`. Duplicates (case, trailing separator) and folders nested in another root are scanned once. A missing folder is skipped (counted as `missing_root`) while another root exists; with none left: 400 `not_found`. A protected system folder: 400 `protected`. |
+| `skip` | list of absolute paths | `[]` | folders (and everything below) that are not scanned |
+| `est_files` | number >= 0 | `0` | the estimate shown before the scan; only used for the progress bar |
+
+`/api/scan/estimate` takes `mode` and `roots` with the same rules. `/api/scan/status` returns the job snapshot plus
+`found, bytes, dirs, by_cat, recent, drives[], noaccess, skipped{reason: n}, skipped_total, skipped_reasons[], step,
+failure`. Skip reasons: `no_access`, `vanished`, `unreadable`, `bad_name` (a name SQLite cannot store), `missing_root`,
+`error` (an unexpected problem in one folder; its traceback is in the log).
+
+### Errors
+- API errors are always `{"error": "<plain sentence>", "code": "<stable code>", "hint": "<what to do>"}`. Invalid input is
+  a 400; bugs (`KeyError`, `TypeError`...) are a 500 with code `internal`, and the full traceback goes to the terminal
+  and to `~/.aurasort/logs/server.log` (rotating, 1 MB x 3; the token and home path are masked, file contents are never logged).
+- A failed job has `state: "error"`, a plain `errors[0]`, and `failure: {code, message, hint, type, step}`. The UI never
+  shows an exception name: it shows the message, "Try again", and "Copy details" (version, OS, step, code, log location;
+  the folders you chose only if you tick the box).
+- The scan never dies silently: folder and file problems are counted as skipped with a reason; only a failure to write
+  the index (locked, disk full, read-only, damaged) stops it, with a message that says which.
 
 ### Safety pipeline for any file action
 1. The browser sends **ids**, never paths. 2. The server resolves them in the index and applies the same rules for
@@ -53,4 +88,7 @@ and URL parameters), `api.js` (real API or the demo backend in `demo.js`), `ui.j
   folder replaces the Recycle Bin; a mock model server replaces Ollama).
 - `tests/e2e/*.mjs`: browser tests driving Edge/Chrome through the DevTools protocol on a fixture home built by
   `tools/make_fixtures.py`, plus a screenshot sweep of every page in both themes.
+- `tests/e2e/full.pw.mjs`: the whole app through Playwright (test-only dependency, uses the installed Edge): every page,
+  every scan combination, move + undo, Recycle Bin, preview, integrity check, Settings and Legal. It fails on any console
+  error, any failed request (4xx/5xx) and any error toast.
 - `tools/benchmark.py`, `tools/bench_copy.py`: measured performance, printed as numbers.

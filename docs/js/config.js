@@ -9,6 +9,18 @@ const POLL_JOB_MS = 220;
 const ESTIMATE_DEBOUNCE_MS = 700;
 const TOAST_MS = 3200;
 const TOAST_ERR_MS = 6000;
+const TOAST_ACTION_MS = 15000;    // an error toast with buttons stays up longer (it also pauses while hovered)
+// Server error codes -> what people read. Codes not listed here show the server's own (already friendly) message.
+const ERROR_TEXT = {
+  session_expired: 'This page belongs to an older server session. Reload the page to reconnect.',
+  rate_limited: 'That was a lot of requests at once. Wait a moment, then try again.',
+  internal: 'Something went wrong on our side. Your files were not changed.',
+  too_large: 'That selection is too large to send in one go. Select fewer files and try again.',
+  forbidden: 'This request was blocked for safety. Open the app from the address the server printed.',
+  not_allowed: 'That action is not available.',
+  index_busy: 'The file index is being used by another AuraSort window. Close the other window, then try again.',
+  disk_full: 'The drive that holds your AuraSort data is full. Free some space, then try again.'
+};
 const THEME_KEY = 'aurasort.theme';
 const NOTES_KEY = 'aurasort.notes';
 const NOTES_MAX = 30;

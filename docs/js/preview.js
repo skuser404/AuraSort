@@ -101,7 +101,7 @@ ACT['pv-open'] = async t => { // Why: macro-capable Office files get a warning f
   if (d && d.macro && !await confirmDialog({ title: 'Open a file that can contain macros?', danger: true, ok: 'Open it',
     body: `<p><b>${esc(d.file.name)}</b> is an Office file type that can contain macros (small programs). Only open it if you trust where it came from.</p>` })) return;
   try { const r = await API.openFile(id, !!(d && d.macro)); toast(r && r.demo ? 'Demo: this would open the file in its own app.' : 'Opening it in its own app…', 'ok') }
-  catch (e) { toast(friendly(e), 'err') }
+  catch (e) { toastError(e) }
 };
 function previewKey(e) { // Why: Esc closes, arrows step through the files on the page, + / - / 0 zoom
   if ($('#pv').hidden || !$('#modal').hidden) return false;

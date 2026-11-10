@@ -65,7 +65,7 @@ function actionDialog(kind, ids, dest, st, disk) { // kind: move | copy | trash.
 }
 
 /* ---------------- flows ---------------- */
-async function preflight(ids) { try { return await API.selection(ids) } catch (e) { toast(friendly(e), 'err'); return null } }
+async function preflight(ids) { try { return await API.selection(ids) } catch (e) { toastError(e); return null } }
 function moveOrCopy(mode, ids, single = false) { // Why: choose (or create) a folder, confirm with the exact numbers, then the move stage
   if (!ids.length) return;
   const start = (S.settings && S.settings.dest) || (S.info && S.info.dest) || '';
@@ -82,7 +82,7 @@ function moveOrCopy(mode, ids, single = false) { // Why: choose (or create) a fo
         closePreview();
         if (S.settings) S.settings.dest = dest;
         Stage.open({ n: x.count, by_cat: x.by_cat }, x.job, { mode, dest, back: S.view, fromSelection: !single });
-      } catch (e) { toast(friendly(e), 'err') }
+      } catch (e) { toastError(e) }
     } });
 }
 async function toBin(ids, single = false) { // Why: Recycle Bin / Trash only, after a confirmation with the exact numbers
@@ -90,7 +90,7 @@ async function toBin(ids, single = false) { // Why: Recycle Bin / Trash only, af
   const st = await preflight(ids); if (!st) return;
   const r = await actionDialog('trash', ids, '', st, null); if (!r) return;
   let x;
-  try { x = await API.trash({ ids, allow_project: r.allow_project, allow_viewonly: r.allow_viewonly, confirm_count: r.confirm_count }) } catch (e) { toast(friendly(e), 'err'); return }
+  try { x = await API.trash({ ids, allow_project: r.allow_project, allow_viewonly: r.allow_viewonly, confirm_count: r.confirm_count }) } catch (e) { toastError(e); return }
   if (!x.count) { toast('Nothing was sent: every selected file is protected or view-only.', 'err'); return }
   closePreview();
   await binProgress(x, single);
@@ -100,7 +100,7 @@ async function binProgress(x, single) { // Why: a calm progress dialog fed by th
     <div class="meter" data-css="margin:18px 0 10px"><i id="bp-bar" data-css="width:0%"></i></div><p class="mut num" id="bp-txt">Starting…</p><div id="bp-end"></div>`);
   let j = null;
   for (;;) {
-    try { j = await API.job(x.job) } catch (e) { toast(friendly(e), 'err'); break }
+    try { j = await API.job(x.job) } catch (e) { toastError(e); break }
     const bar = $('#bp-bar'), txt = $('#bp-txt');
     if (bar) bar.style.width = `${(100 * (j.done || 0) / Math.max(1, j.total || 1)).toFixed(1)}%`;
     if (txt) txt.textContent = `${fmt(j.done || 0)} of ${fmt(j.total || 0)} checked · ${fmt(j.moved || 0)} sent · ${sz(j.bytes || 0)}`;
@@ -129,5 +129,5 @@ ACT['act-trash'] = () => toBin(Sel.ids());
 ACT['pv-move'] = t => moveOrCopy('move', [+t.dataset.id], true);
 ACT['pv-copyto'] = t => moveOrCopy('copy', [+t.dataset.id], true);
 ACT['pv-trash'] = t => toBin([+t.dataset.id], true);
-ACT['open-bin'] = () => API.openTrash().then(r => r && r.demo && toast(`Demo: this would open the ${binName()}.`)).catch(e => toast(friendly(e), 'err'));
+ACT['open-bin'] = () => API.openTrash().then(r => r && r.demo && toast(`Demo: this would open the ${binName()}.`)).catch(e => toastError(e));
 ACT['bp-done'] = () => closeModal();

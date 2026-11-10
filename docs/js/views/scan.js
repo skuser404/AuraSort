@@ -9,6 +9,8 @@ function scanSetup() { // Why: remembered between runs (settings), drives chosen
   return S.setup;
 }
 const deepRoots = st => [...st.drives, ...st.folders];
+const NOTHING_PICKED = 'Pick at least one drive or folder.';
+const scanReady = st => st.mode === 'quick' || deepRoots(st).length > 0;   // Deep Scan of folders only is a valid choice
 
 function viewScan(v) {
   if (S.scan && ['running', 'paused'].includes(S.scan.state)) return scanProgress(v);
@@ -39,13 +41,16 @@ function viewScan(v) {
     </dl>
     <p class="mut auth-note">Only scan files you own or are authorised to manage.</p>
     ${risky ? `<div class="note warn">${ic('alert')}<div>${esc(risky)}</div></div>` : ''}
-    <button class="btn pri lg" data-a="scan-start" ${st.mode === 'deep' && !deepRoots(st).length ? 'disabled' : ''}>Start ${st.mode === 'quick' ? 'Quick' : 'Deep'} Scan</button>
+    ${S.scanFail ? scanFailHtml(S.scanFail) : ''}
+    <button class="btn pri lg" data-a="scan-start" ${scanReady(st) ? '' : 'disabled aria-describedby="start-help"'}>Start ${st.mode === 'quick' ? 'Quick' : 'Deep'} Scan</button>
+    ${scanReady(st) ? '' : `<p class="mut start-help" id="start-help">${NOTHING_PICKED}</p>`}
     ${S.summary && S.summary.scan ? `<p class="mut" data-css="margin-top:14px">Last scan: ${S.summary.scan.mode === 'deep' ? 'Deep' : 'Quick'}, ${ago(S.summary.scan.finished)}, ${fmt(S.summary.total)} files${S.summary.scan.noaccess ? `, ${fmt(S.summary.scan.noaccess)} folders skipped (no access)` : ''}</p>` : ''}</aside></div>`;
   estimateSoon();
 }
 function estimateHtml(st) { // Why: an honest range from a short benchmark, always labelled as an estimate
   if (st.estimating) return 'Measuring the disk speed (2-3 seconds)…';
-  if (!st.est) return st.mode === 'deep' && !deepRoots(st).length ? 'Choose at least one drive or folder.' : 'Estimating…';
+  if (!scanReady(st)) return NOTHING_PICKED;
+  if (!st.est) return st.estErr ? `<span class="mut">No time estimate right now (${esc(st.estErr)}). You can still start the scan.</span>` : 'Estimating…';
   const e = st.est;
   return `<b>Estimated scan time: ${durRange(e.low_s, e.high_s)}</b><small class="mut" data-css="display:block">About ${fmt(e.est_files)} files at ${fmt(e.files_per_s)} files/s. This is an estimate.</small>`;
 }
@@ -57,26 +62,44 @@ function scanNeedsCare(st) { // Why: a stronger reminder when the scan reaches n
   if (other) return 'This includes another person\'s user folder. Only scan it if you are allowed to manage those files.';
   return '';
 }
-const estimateSoon = debounce(async () => { // Why: the ETA updates whenever the selection changes
-  const st = scanSetup(); if (S.view !== 'scan' || (st.mode === 'deep' && !deepRoots(st).length)) return;
-  st.estimating = true; st.est = null; const box = $('#est'); if (box) box.innerHTML = estimateHtml(st);
-  try { st.est = await API.estimate({ mode: st.mode, roots: st.mode === 'deep' ? deepRoots(st) : [] }) } catch (e) { st.est = null }
-  st.estimating = false; const b2 = $('#est'); if (b2) b2.innerHTML = estimateHtml(st);
+const estimateSoon = debounce(async () => { // Why: the ETA updates whenever the selection changes (once per selection, not per redraw)
+  const st = scanSetup(); if (S.view !== 'scan' || !scanReady(st)) return;
+  const req = { mode: st.mode, roots: st.mode === 'deep' ? deepRoots(st) : [] }, key = JSON.stringify(req);
+  if (st.estKey === key && (st.est || st.estimating)) { const b = $('#est'); if (b) b.innerHTML = estimateHtml(st); return }
+  st.estKey = key; st.estimating = true; st.est = null; st.estErr = ''; const box = $('#est'); if (box) box.innerHTML = estimateHtml(st);
+  try { const e = await API.estimate(req); if (st.estKey === key) st.est = e }
+  catch (e) { if (st.estKey === key) { st.est = null; st.estErr = friendly(e).replace(/[.]$/, '').toLowerCase(); st.estKey = '' } }
+  if (st.estKey === key || !st.estKey) st.estimating = false;
+  const b2 = $('#est'); if (b2) b2.innerHTML = estimateHtml(st);
 }, ESTIMATE_DEBOUNCE_MS);
 
+function scanRequest(st) { // Why: the one place that builds the scan request (contract: core/schema.py scan_request, docs/ARCHITECTURE.md)
+  return { mode: st.mode, roots: st.mode === 'deep' ? deepRoots(st) : [], skip: st.skip, est_files: st.est ? st.est.est_files : 0 };
+}
 async function startScan() {
   const st = scanSetup();
+  if (!scanReady(st)) { toast(NOTHING_PICKED, 'err'); return }   // also covers "Start" from the folder picker with nothing chosen
+  const req = scanRequest(st);
   try {
-    await API.scanStart({ mode: st.mode, roots: st.mode === 'deep' ? deepRoots(st) : [], skip: st.skip, est_files: st.est ? st.est.est_files : 0 });
+    await API.scanStart(req);
     API.saveSettings({ drives: [...st.drives] }).catch(() => {});
-    S.scan = { state: 'running', found: 0 }; render(false); pollScan();
-  } catch (e) { toast(friendly(e), 'err') }
+    S.scanFail = null; S.scan = { state: 'running', found: 0 }; render(false); pollScan();
+  } catch (e) { toastError(e, { retry: startScan, what: 'starting a scan', paths: req.roots }) }
+}
+function scanFailHtml(f) { // Why: a failed scan explains itself on the page, with a way forward (Try again, Copy details)
+  return `<div class="note err scan-fail" role="alert">${ic('alert')}<div><b>The last scan stopped.</b> ${esc(f.message || ERROR_TEXT.internal)}${f.hint ? ` <span class="mut">${esc(f.hint)}</span>` : ''}
+    <div class="row"><button class="btn sm" data-a="scan-start">Try again</button><button class="btn sm ghost" data-a="scan-fail-details">Copy details</button></div></div></div>`;
+}
+ACT['scan-fail-details'] = () => { const f = S.scanFail || {}; showErrorDetails({ e: { failure: f, message: f.message }, what: 'scan', paths: f.paths || [] }) };
+function skippedText(s) { // Why: nothing is dropped silently: "12 skipped: 9 no permission, 3 removed during the scan"
+  const r = s.skipped_reasons || [];
+  return s.skipped_total ? `${fmt(s.skipped_total)} skipped: ${r.map(x => `${fmt(x.n)} ${x.label}`).join(', ')}` : '';
 }
 async function pollScan() { // Why: live partial counts while the scan runs; finishing loads the new index
   if (pollScan.on) return; pollScan.on = true;
   try {
     for (;;) {
-      let s; try { s = await API.scanStatus() } catch (e) { toast(friendly(e), 'err'); break }
+      let s; try { s = await API.scanStatus() } catch (e) { toastError(e); break }
       S.scan = s; if (S.view === 'scan') updateScanUI(s);
       if (!['running', 'paused'].includes(s.state)) { await scanDone(s); break }
       await sleep(POLL_SCAN_MS);
@@ -85,12 +108,15 @@ async function pollScan() { // Why: live partial counts while the scan runs; fin
 }
 async function scanDone(s) {
   if (s.state === 'done') {
-    notify(`Scan finished: ${fmt(s.found)} files`, `${sz(s.bytes)} · ${dur(s.elapsed)}`, 'scan'); toast(`Scan finished: ${fmt(s.found)} files (${sz(s.bytes)})`, 'ok');
+    notify(`Scan finished: ${fmt(s.found)} files`, `${sz(s.bytes)} · ${dur(s.elapsed)}`, 'scan'); toast(`Scan finished: ${fmt(s.found)} files (${sz(s.bytes)})${s.skipped_total ? `, ${fmt(s.skipped_total)} skipped` : ''}`, 'ok');
     S.extData = null; await refreshIndex();
     const p = S.pending; S.pending = null;
     if (p && p.has) { applyParams(p); render(); syncURL('replace'); syncSearchBox() } else go('dashboard');
   } else if (s.state === 'cancelled') { toast('Scan cancelled. Your previous index is kept.'); render(false) }
-  else { toast('The scan stopped: ' + ((s.errors || [])[0] || 'unknown error'), 'err'); render(false) }
+  else {
+    const f = Object.assign({ message: (s.errors || [])[0] || ERROR_TEXT.internal }, s.failure || {}, { paths: s.roots || [] });
+    S.scanFail = f; toastError({ message: f.message, code: f.code, hint: f.hint, failure: f }, { retry: startScan, what: 'scan', paths: f.paths }); render(false);
+  }
 }
 function scanProgress(v) {
   const s = S.scan || {};
@@ -112,7 +138,7 @@ function updateScanUI(s) { // Why: update numbers in place (no re-render flicker
   set('sc-pct', Math.round(s.pct || 0) + '%'); set('sc-found', fmt(s.found)); set('sc-dirs', fmt(s.dirs)); set('sc-bytes', sz(s.bytes)); set('sc-el', dur(s.elapsed));
   set('sc-rem', s.remaining == null ? 'measuring…' : '~' + dur(s.remaining)); set('sc-rate', s.rate ? fmt(s.rate) + ' files/s' : '—');
   set('sc-title', s.state === 'paused' ? 'Paused' : 'Scanning…'); set('sc-cur', s.current_file ? 'Now: ' + s.current_file : '');
-  set('sc-noacc', s.noaccess ? `${fmt(s.noaccess)} folders skipped (no access)` : '');
+  set('sc-noacc', skippedText(s));
   const pb = $('#sc-pause'); if (pb) { const want = s.state === 'paused' ? 'Resume' : 'Pause'; if (!pb.textContent.includes(want)) pb.innerHTML = s.state === 'paused' ? ic('play') + ' Resume' : ic('pause') + ' Pause' }
   const tk = $('#sc-ticker'), recent = (s.recent || []).slice().reverse();
   if (tk && tk.dataset.k !== recent.join('|')) { tk.dataset.k = recent.join('|'); tk.innerHTML = recent.map(p => `<div>${esc(p)}</div>`).join('') }
@@ -120,12 +146,12 @@ function updateScanUI(s) { // Why: update numbers in place (no re-render flicker
   const cats = $('#sc-cats'); if (cats) cats.innerHTML = CATS.map(c => { const n = (s.by_cat || {})[c.key] || 0; return `<span class="${n ? '' : 'zero'}" data-css="--c:${c.c}">${ic(c.ic)}${esc(c.key)} <b class="num">${fmt(n)}</b></span>` }).join('');
   const dv = $('#sc-drives'); if (dv) dv.innerHTML = (s.drives || []).filter(d => d.pct != null).map(d => `<div class="row" data-css="margin-top:8px"><span data-css="width:70px">${esc(driveName(d.root))}</span><span class="meter" data-css="flex:1"><i data-css="width:${Math.min(100, d.pct).toFixed(1)}%"></i></span><span class="num">${Math.round(d.pct)}%</span></div>`).join('');
 }
-ACT.scanmode = t => { const st = scanSetup(); st.mode = t.dataset.m; st.est = null; render(false) };
+ACT.scanmode = t => { const st = scanSetup(); st.mode = t.dataset.m === 'deep' ? 'deep' : 'quick'; st.est = null; render(false) };
 ACT.drive = t => { const st = scanSetup(), r = t.dataset.r; st.drives.has(r) ? st.drives.delete(r) : st.drives.add(r); st.est = null; render(false) };
 ACT['rm-root'] = t => { const st = scanSetup(); st.folders.splice(+t.dataset.i, 1); st.est = null; render(false) };
 ACT['rm-skip'] = t => { const st = scanSetup(); st.skip.splice(+t.dataset.i, 1); API.saveSettings({ skip: st.skip }).catch(() => {}); st.est = null; render(false) };
 ACT['pick-roots'] = () => Picker.open({ mode: 'scan', title: 'Choose folders to scan', selected: scanSetup().folders, onDone: (paths, start) => { const st = scanSetup(); st.folders = paths; st.est = null; render(false); if (start) startScan() } });
 ACT['pick-skip'] = () => Picker.open({ mode: 'skip', title: 'Choose folders to skip', selected: scanSetup().skip, onDone: paths => { const st = scanSetup(); st.skip = paths; API.saveSettings({ skip: paths }).catch(() => {}); st.est = null; render(false) } });
 ACT['scan-start'] = () => startScan();
-ACT['scan-pause'] = async () => { try { S.scan = await API.scanControl(S.scan && S.scan.state === 'paused' ? 'resume' : 'pause'); updateScanUI(S.scan) } catch (e) { toast(friendly(e), 'err') } };
-ACT['scan-cancel'] = async () => { if (!await confirmDialog({ title: 'Cancel the scan?', body: 'Files found so far are not saved; your previous index is kept.', ok: 'Cancel scan', danger: true })) return; try { await API.scanControl('cancel') } catch (e) { toast(friendly(e), 'err') } };
+ACT['scan-pause'] = async () => { try { S.scan = await API.scanControl(S.scan && S.scan.state === 'paused' ? 'resume' : 'pause'); updateScanUI(S.scan) } catch (e) { toastError(e) } };
+ACT['scan-cancel'] = async () => { if (!await confirmDialog({ title: 'Cancel the scan?', body: 'Files found so far are not saved; your previous index is kept.', ok: 'Cancel scan', danger: true })) return; try { await API.scanControl('cancel') } catch (e) { toastError(e) } };

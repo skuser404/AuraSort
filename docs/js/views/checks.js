@@ -18,13 +18,13 @@ async function followJob(jid, box, onDone) { // Why: one progress widget for che
     await sleep(POLL_JOB_MS * 3);
   }
 }
-ACT['ck-ctl'] = t => { const jid = t.closest('.job-box').dataset.job; API.jobControl(jid, t.dataset.c).catch(e => toast(friendly(e), 'err')) };
+ACT['ck-ctl'] = t => { const jid = t.closest('.job-box').dataset.job; API.jobControl(jid, t.dataset.c).catch(e => toastError(e)) };
 async function downloadCsv() { // Why: the token stays in a header; the CSV arrives as a blob the browser saves
   try {
     const r = await fetch('/api/integrity/csv', { headers: { 'X-AuraSort-Token': TOKEN } }); if (!r.ok) throw new Error('Export failed.');
     const url = URL.createObjectURL(await r.blob()), a = document.createElement('a');
     a.href = url; a.download = `${APP.name.toLowerCase()}-problem-files.csv`; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000);
-  } catch (e) { toast(friendly(e), 'err') }
+  } catch (e) { toastError(e) }
 }
 
 /* ---------------- Corrupted ---------------- */
@@ -61,7 +61,7 @@ ACT['ck-pg'] = t => { CK.page = Math.max(1, +t.dataset.p); loadCorrupted() };
 ACT['ck-csv'] = () => downloadCsv();
 ACT['ck-start'] = async () => {
   try { const r = await API.integrityStart({ mode: CK.mode || 'quick', ids: S.sel.size ? Sel.ids() : null }); followJob(r.job, 'ck-job', j => { notify(`Check finished: ${fmt(j.problems || 0)} problem files`, `${fmt(j.checked || 0)} checked`, 'alert'); loadCorrupted() }) }
-  catch (e) { toast(friendly(e), 'err') }
+  catch (e) { toastError(e) }
 };
 
 /* ---------------- Duplicates ---------------- */
@@ -86,9 +86,9 @@ async function loadDuplicates() {
     + pagerHtml({ page: r.page, pages: r.pages, per: r.per, total: r.total }, 'dp-pg');
   applyCss(box); Sel.paint();
 }
-ACT['dp-start'] = async () => { try { const r = await API.duplicatesStart(); followJob(r.job, 'dp-job', j => { notify(`Duplicate check finished: ${fmt(j.groups || 0)} groups`, sz(j.wasted || 0) + ' could be freed', 'files'); loadDuplicates() }) } catch (e) { toast(friendly(e), 'err') } };
+ACT['dp-start'] = async () => { try { const r = await API.duplicatesStart(); followJob(r.job, 'dp-job', j => { notify(`Duplicate check finished: ${fmt(j.groups || 0)} groups`, sz(j.wasted || 0) + ' could be freed', 'files'); loadDuplicates() }) } catch (e) { toastError(e) } };
 ACT['dp-pg'] = t => { CK.dpage = Math.max(1, +t.dataset.p); loadDuplicates() };
-ACT['dp-extras'] = async () => { try { const r = await API.duplicatesExtras(); r.ids.forEach((id, i) => S.sel.set(id, { size: r.sizes[i] })); Sel.paint(); toast(`Selected ${fmt(r.ids.length)} extra copies (${sz(r.sizes.reduce((a, b) => a + b, 0))}).`, 'ok') } catch (e) { toast(friendly(e), 'err') } };
+ACT['dp-extras'] = async () => { try { const r = await API.duplicatesExtras(); r.ids.forEach((id, i) => S.sel.set(id, { size: r.sizes[i] })); Sel.paint(); toast(`Selected ${fmt(r.ids.length)} extra copies (${sz(r.sizes.reduce((a, b) => a + b, 0))}).`, 'ok') } catch (e) { toastError(e) } };
 
 /* ---------------- Cleanup ---------------- */
 function viewCleanup(v) {
@@ -103,7 +103,7 @@ async function loadCleanup() {
     <b>${esc(g.label)}</b><span class="num">${fmt(g.n)} ${g.n === 1 ? 'file' : 'files'} · ${sz(g.size)}</span><small class="mut">${esc(g.desc)}</small></button>`).join('');
 }
 async function loadCleanupList() {
-  let r; try { r = await API.cleanup({ reason: CK.reason, page: CK.rpage, per: PAGE_SIZE }) } catch (e) { toast(friendly(e), 'err'); return }
+  let r; try { r = await API.cleanup({ reason: CK.reason, page: CK.rpage, per: PAGE_SIZE }) } catch (e) { toastError(e); return }
   const box = $('#cl-list'); if (!box) return;
   Sel.remember(r.rows, { kind: 'cleanup', params: { reason: CK.reason }, total: r.total });
   box.innerHTML = r.total ? `<div class="list-head"><span class="row nowrap"><label class="lh-sel">${pageBox(r.rows, 'Select every file on this page')}</label><span><b class="num">${fmt(r.total)}</b> <span class="mut">files</span></span></span><span class="mut">Total ${sizeHtml(r.size)}</span></div>
@@ -119,5 +119,5 @@ ACT['act-quarantine'] = async () => {
   const ids = Sel.ids(), st = await preflight(ids); if (!st) return;
   const r = await actionDialog('move', ids, 'Quarantine folder (inside your destination)', st, null); if (!r) return;
   try { const x = await API.quarantine({ ids, allow_project: r.allow_project, allow_viewonly: r.allow_viewonly, verify: r.verify }); if (x.count) Stage.open({ n: x.count, by_cat: x.by_cat }, x.job, { mode: 'move', dest: x.dest, back: 'corrupted', fromSelection: true }) }
-  catch (e) { toast(friendly(e), 'err') }
+  catch (e) { toastError(e) }
 };

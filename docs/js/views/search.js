@@ -11,7 +11,8 @@ function viewSearch(v) {
 }
 async function runSearch() { // Why: the worker ranks ids; the page's rows (paths, flags) come from the server
   const token = (runSearch.n = (runSearch.n || 0) + 1), F = S.F, q = F.q.trim();
-  if (!q && !F.type && !F.formats.size && !F.folder.trim() && !F.date && !F.dir) {
+  if (S.view !== 'search' || !$('#sres')) return;   // a delayed search (typing debounce) after you left the page: nothing to update
+  if (!q &&!F.type && !F.formats.size && !F.folder.trim() && !F.date && !F.dir) {
     $('#fmts').innerHTML = ''; $('#lhead').innerHTML = ''; $('#pager').innerHTML = ''; Sel.remember([], null); Sel.paint();
     $('#sres').innerHTML = empty('search', `Search ${fmt(S.summary ? S.summary.total : 0)} files`, 'Start typing in the search bar (Ctrl+K). “light” finds lighthouse_sunset.jpg, Spotlight.png and light-mode.pdf.',
       ['light', 'invoice', 'IMG_20', 'screenshot'].map(x => `<button class="chip" data-a="tryq" data-q="${esc(x)}">${esc(x)}</button>`).join(''));
