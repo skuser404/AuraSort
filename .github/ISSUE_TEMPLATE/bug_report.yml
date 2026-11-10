@@ -1,0 +1,29 @@
+name: Bug report
+description: Something does not work as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Please protect your privacy.** Do not paste personal files, full paths with your user name, API keys or screenshots of private documents. Replace names with examples such as `C:\Users\you\Pictures\photo.jpg`.
+        Security problem? Please report it privately instead: Security, Advisories, *Report a vulnerability*.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: AuraSort version, OS and Python version
+      placeholder: "1.0.0 · Windows 11 · Python 3.12"
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Log excerpt (optional)
+      description: From ~/.aurasort/aurasort.log (tokens, keys and your home folder are masked). Check it for private file names before pasting.
+      render: text

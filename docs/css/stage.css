@@ -1,0 +1,75 @@
+/* AuraSort - full-screen move stage (real file names, real thumbnails, live counters). */
+#stage { position: fixed; inset: 0; z-index: 70; overflow: hidden; opacity: 0; transition: opacity .25s ease;
+  background: var(--bg) }
+#stage.in { opacity: 1 }
+#fx { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none }
+.st-wrap { position: relative; z-index: 2; height: 100%; display: flex; flex-direction: column; gap: 14px; padding: 24px 28px; overflow: auto }
+.st-head { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; align-items: flex-end }
+.st-head h2 { font-size: 28px }
+.st-stats { display: flex; gap: 28px; flex-wrap: wrap }
+.st-stats div { text-align: right }
+.st-stats small { display: block; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--mut); font-weight: 650 }
+.st-stats b { display: block; font-family: var(--display); font-size: 20px; font-weight: 700 }
+.st-bar { height: 4px; border-radius: 9px; background: var(--track); overflow: hidden }
+.st-bar i { display: block; height: 100%; width: 100%; transform: scaleX(0); transform-origin: left; background: var(--grad);  transition: transform .25s linear }
+.st-mid { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; align-items: center; min-height: 260px }
+.spot { display: grid; place-items: center; min-height: 240px }
+.orb { position: relative; width: 180px; aspect-ratio: 1; border-radius: 50%; display: grid; place-content: center; text-align: center; background: var(--card-solid); border: 1px solid var(--border-2); box-shadow: var(--shadow) }
+.orb b { font-family: var(--display); font-size: 28px; line-height: 1 }
+.orb small { margin-top: 6px; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; font-weight: 650 }
+.ticker-wrap { min-width: 0 }
+.st-ticker { display: flex; flex-direction: column; gap: 8px; min-height: 250px; -webkit-mask-image: linear-gradient(180deg, #000 55%, transparent); mask-image: linear-gradient(180deg, #000 55%, transparent) }
+.tk { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 9px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--card-solid); font-size: 14px; animation: tkIn .25s var(--ease) both }
+.tk .i { color: var(--c); flex: none }
+.tk b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 0 1 auto; min-width: 0 }
+.tk .ar { color: var(--accent); flex: none }
+.tk .to { color: var(--mut); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 60px }
+@keyframes tkIn { from { opacity: 0; } to { opacity: 1; transform: none } }
+.vaults { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px }
+.vault { position: relative; display: flex; gap: 12px; align-items: center; padding: 12px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--card-solid) }
+.vault::after { content: ""; position: absolute; inset: -1px; border-radius: inherit; border: 1px solid var(--c);  opacity: 0; pointer-events: none }
+.vault.hit::after { animation: vhit .25s ease }
+@keyframes vhit { 30% { opacity: 1 } }
+.v-ring { position: relative; width: 56px; height: 56px; flex: none }
+.v-ring > svg { width: 100%; height: 100%; transform: rotate(-90deg) }
+.v-ring circle { fill: none; stroke-width: 4 }
+.v-ring .trk { stroke: var(--track) }
+.v-ring .val { stroke: var(--c); stroke-linecap: round;}
+.v-ic { position: absolute; inset: 0; display: grid; place-items: center; color: var(--c) }
+.v-ic .i { width: 20px; height: 20px }
+.v-txt { min-width: 0; display: flex; flex-direction: column; font-size: 13px }
+.v-txt b { font-weight: 650; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+#flyers { position: fixed; inset: 0; pointer-events: none; z-index: 3 }
+.fly { position: absolute; left: 0; top: 0; width: 80px; opacity: 0; will-change: transform, opacity; display: flex; flex-direction: column; align-items: center; gap: 4px }
+.fly .fc { position: relative; width: 56px; height: 56px; border-radius: 13px; display: grid; place-items: center; overflow: hidden; color: var(--c);
+  border: 1px solid color-mix(in srgb, var(--c) 55%, transparent); background: var(--card-solid); box-shadow: var(--shadow) }
+.fly .fc .i { width: 24px; height: 24px }
+.fly img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover }
+.fly .fn { max-width: 130px; font-size: 12px; font-weight: 600; color: var(--txt); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 6px var(--bg) }
+.st-final { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; padding: 20px; background: var(--scrim); overflow: auto; animation: fadeIn .25s ease both }
+.fin { width: min(720px, 100%); text-align: center; padding: 36px 28px; background: var(--card-solid); animation: pop .25s var(--ease) both }
+.fin-mark { width: 76px; height: 76px; margin: 0 auto 16px; border-radius: 50%; display: grid; place-items: center; color: #fff; background: var(--grad);  animation: pop .25s .15s var(--ease) both }
+.fin-mark .i { width: 34px; height: 34px; stroke-width: 2.4 }
+.fin-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin: 24px 0 16px }
+.fin-stats > div { padding: 16px 10px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface) }
+.fin-stats b { display: block; font-family: var(--display); font-size: 28px; font-weight: 700 }
+.fin-stats small { display: block; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; margin-top: 4px; font-weight: 650 }
+.fin .row { justify-content: center; margin-top: 18px }
+.fin .note { text-align: left; margin-top: 12px }
+@media (max-width: 860px) { .st-mid { grid-template-columns: 1fr } .spot { min-height: 170px } .st-ticker { min-height: 150px } .st-stats div { text-align: left } }
+
+/* ---------- transfer stage: drive route, sparkline, report ---------- */
+.st-route { display: grid; grid-template-columns: auto minmax(120px, 1fr) auto minmax(140px, 220px) auto; gap: 14px; align-items: center; min-height: 44px; font-size: 13px }
+.st-route:empty { display: none }
+.rt-drive { display: inline-flex; gap: 8px; align-items: center; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--card-solid); font-weight: 600 }
+.rt-path { position: relative; height: 2px; background: var(--border-2); border-radius: 2px }
+.rt-glyph { position: absolute; top: -10px; left: -10px; width: 20px; height: 20px; display: grid; place-items: center; color: var(--accent); background: var(--bg); transition: left .25s ease-out }
+.rt-glyph .i { width: 16px; height: 16px }
+.st-route.moving .rt-path { background: linear-gradient(90deg, var(--accent) 0 50%, var(--border-2) 50%) 0 0 / 16px 2px }
+.rt-spark { width: 100%; height: 40px; border-bottom: 1px solid var(--hair) }
+.rt-spark polyline { fill: none; stroke: var(--chart-a); stroke-width: 1.5; vector-effect: non-scaling-stroke }
+.st-ctl { display: flex; gap: 6px; align-items: flex-end }
+.fin-report { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 12px 0 0; text-align: left }
+.fin-report > div { padding: 10px 12px; border: 1px solid var(--hair); border-radius: 8px }
+.fin-report dt { font-size: 12px; color: var(--mut) } .fin-report dd { margin: 2px 0 0; font-size: 14px }
+@media (max-width: 860px) { .st-route { grid-template-columns: auto 1fr auto } .rt-spark, #rt-note { grid-column: 1 / -1 } }

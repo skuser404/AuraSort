@@ -1,0 +1,17 @@
+name: Feature request
+description: Suggest an improvement
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: "**Please protect your privacy.** Do not paste personal files, full paths with your user name, API keys or screenshots of private documents."
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like AuraSort to do?
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why would it help you?

@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="app-token" content="__TOKEN__">
+<meta name="color-scheme" content="dark light">
+<meta name="referrer" content="no-referrer">
+<title>AuraSort - Make your files easier.</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect x='3' y='3' width='34' height='34' rx='10' fill='%237b6cf0'/%3E%3Cpath d='M13.5 28 20 12l6.5 16M15.9 22.5h8.2' fill='none' stroke='%23fff' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<script src="js/theme-boot.js"></script>
+<link rel="stylesheet" href="css/theme.css">
+<link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="css/stage.css">
+</head>
+<body>
+<a class="skip" href="#view">Skip to content</a>
+<svg class="svg-defs" width="0" height="0" aria-hidden="true" focusable="false"><defs>
+  <linearGradient id="ag" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#a594fa"/><stop offset="1" stop-color="#5b8def"/></linearGradient>
+  <linearGradient id="tg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8b7cf6" stop-opacity=".28"/><stop offset="1" stop-color="#8b7cf6" stop-opacity="0"/></linearGradient>
+</defs></svg>
+<div id="app">
+  <aside id="nav" aria-label="Main navigation"></aside>
+  <div class="main">
+    <header id="top">
+      <div class="top-row">
+        <div class="searchbar" role="search">
+          <label class="search">
+            <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <input id="gq" type="search" placeholder="Search every file by name…" autocomplete="off" spellcheck="false" aria-label="Search files by name" maxlength="100">
+            <kbd id="kbd">Ctrl K</kbd>
+          </label>
+          <button class="icon-btn" data-a="copylink" title="Copy a link to this view" aria-label="Copy link">
+            <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>
+          </button>
+        </div>
+        <div class="top-actions">
+          <button class="icon-btn" id="bell" data-a="bell" aria-label="Notifications"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg><span class="dot" hidden></span></button>
+          <div class="theme-switch" id="theme-switch" role="group" aria-label="Theme"></div>
+          <div class="user-chip" id="user-chip" title="Signed in to this computer"></div>
+        </div>
+      </div>
+      <div id="filters" class="filters" aria-label="Active filters"></div>
+    </header>
+    <main id="view" tabindex="-1"></main>
+    <footer id="foot" class="foot"></footer>
+  </div>
+</div>
+<div id="drawer" class="card" hidden></div>
+<div id="selbar" class="card" role="region" aria-label="Selected files" hidden></div>
+<div id="pop" class="card" role="dialog" aria-label="Filter" hidden></div>
+<div id="pv" hidden></div>
+<div id="gate" hidden></div>
+<div id="modal" hidden></div>
+<div id="toast" role="status" aria-live="polite" hidden></div>
+<div id="tip" role="tooltip" hidden></div>
+
+<div id="stage" hidden>
+  <canvas id="fx" aria-hidden="true"></canvas>
+  <div class="st-wrap">
+    <header class="st-head">
+      <div><p class="eyebrow" id="st-brand">AuraSort</p><h2 id="st-title">Moving your files</h2></div>
+      <div class="st-stats" id="st-stats" aria-live="off"></div>
+    </header>
+    <div class="st-bar"><i id="st-bar"></i></div>
+    <div class="st-route" id="st-route"></div>
+    <div class="st-mid">
+      <div class="spot" id="spot"><div class="orb"><b class="num" id="st-left">0</b><small>remaining</small></div></div>
+      <div class="ticker-wrap"><p class="eyebrow">Now moving</p><div class="st-ticker" id="ticker"></div></div>
+    </div>
+    <div class="vaults" id="vaults"></div>
+  </div>
+  <div id="flyers" aria-hidden="true"></div>
+  <div class="st-final" id="st-final" hidden></div>
+</div>
+<script src="js/config.js" defer></script>
+<script src="js/util.js" defer></script>
+<script src="js/match.js" defer></script>
+<script src="js/query.js" defer></script>
+<script src="js/theme.js" defer></script>
+<script src="js/state.js" defer></script>
+<script src="js/demo.js" defer></script>
+<script src="js/api.js" defer></script>
+<script src="js/ui.js" defer></script>
+<script src="js/legal.js" defer></script>
+<script src="js/select.js" defer></script>
+<script src="js/preview.js" defer></script>
+<script src="js/datefilter.js" defer></script>
+<script src="js/picker.js" defer></script>
+<script src="js/animations.js" defer></script>
+<script src="js/actions.js" defer></script>
+<script src="js/scene.js" defer></script>
+<script src="js/views/dashboard.js" defer></script>
+<script src="js/views/storage.js" defer></script>
+<script src="js/views/media.js" defer></script>
+<script src="js/views/timeline.js" defer></script>
+<script src="js/views/search.js" defer></script>
+<script src="js/views/scan.js" defer></script>
+<script src="js/views/move.js" defer></script>
+<script src="js/views/history.js" defer></script>
+<script src="js/views/settings.js" defer></script>
+<script src="js/views/docinsights.js" defer></script>
+<script src="js/views/checks.js" defer></script>
+<script src="js/app.js" defer></script>
+</body>
+</html>
