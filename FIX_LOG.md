@@ -1,5 +1,15 @@
 # Fix log
 
+## CI run 43071634779 (commit 810d6b2): 6 failed jobs
+
+Logs need a signed-in account; the evidence is the public annotations, job timings and a local rerun of each step.
+
+| Job | Cause | Fix | Kind |
+|---|---|---|---|
+| unit tests, macOS, Python 3.10-3.14 | `SingleInstanceTest`: the second start printed "already running" without the address because the first server had not written its port file within 20 s. Starting a server on the macOS runners takes 37 s ("Start the installed app" step: 37 s on macOS, 1-2 s on Linux and Windows). The only blocking call between taking the lock and writing the port file is `HTTPServer.server_bind`, which calls `socket.getfqdn()`, a reverse DNS lookup. Reproduced by making that lookup slow: `make_server` took 8.0 s, after the fix 0.00 s. The same test already failed on macOS on 0dde630 | `LocalServer.server_bind` binds without the lookup (`server.py`); nothing used `server_name`. New `StartupTest` fails on the old code ("getfqdn called"); the single-instance test now prints the first server's output if it does not start | **Product bug**: every macOS start waited for the lookup |
+| browser tests (Windows) | GitHub's Windows runners run as administrator. Rerun locally with the server believing it is elevated: `360px: the selection bar offers Move, Copy and Delete` failed with `covered by toast: "Scan finished: 0 files (0 B), 1 skipped"`. Without administrator rights the test spends a few seconds in the administrator dialog, so the toast had faded; elevated, that block is skipped. The CI artifact (80 MB, a full set of phone screenshots) shows this last suite ran to the end | Toasts move to the top of the screen while the selection bar is shown (`docs/css/app.css`). The e2e step now turns every `FAIL` line into an annotation | **Product bug**: a toast covered Delete in the selection bar on every screen size for a few seconds |
+| every README link answers 200 | `https://skuser404.github.io/AuraSort/` and `.../demo/?demo` answer 404: GitHub Pages is not turned on (`GET /repos/skuser404/AuraSort/pages` = 404). The release links are fine now that v1.1.2 is published | The owner turns Pages on once (Settings > Pages > Source: GitHub Actions) and re-runs the Pages workflow. The checker now retries 3 times, 10 s apart, on 429/5xx/network errors. The links are not skipped: the job should stay red while the site is down | Repository setting |
+
 ## 1.1.2: Windows "0 files", Android move/copy, installer
 
 | # | Report | Verdict | Root cause and evidence |
