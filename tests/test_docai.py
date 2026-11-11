@@ -285,8 +285,10 @@ class LocalPipelineTest(PipelineCase):
         self.assertEqual(res["scan.pdf"]["status"], "scanned")
         self.assertIn("could not", res["badjson notes.txt"]["note"].lower())
         self.assertEqual(res["invoice.txt"]["doc_type"], "notes")
-        self.assertNotIn("4111", json.dumps(res), "card numbers copied by the model are masked")
-        self.assertNotIn("a@b.co", json.dumps(res))
+        # only the text the model or the rules produced (timestamps and sizes can contain "4111" by chance: that was a flaky false alarm)
+        texts = json.dumps([{k: v for k, v in r.items() if k not in ("fid", "size", "mtime", "pages")} for r in res.values()])
+        self.assertNotRegex(texts, r"4111[\s-]?1111", "card numbers copied by the model are masked")
+        self.assertNotIn("a@b.co", texts)
         # prompt injection: only a label came back, nothing was moved, deleted or started
         self.assertEqual(res["inject.txt"]["action"], "delete-candidate")
         self.assertTrue(all(os.path.exists(self.home / "Docs" / n) for n in ("inject.txt", "statement.docx", "invoice.txt")))

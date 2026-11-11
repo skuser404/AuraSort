@@ -97,6 +97,7 @@ addEventListener('popstate', () => { // Why: Back/Forward restore the previous v
   try { S.layout = localStorage.getItem(LAYOUT_KEY) || 'list' } catch (e) { S.layout = 'list' }
   renderThemeSwitch(); loadNotes(); renderFooter();
   await termsGate();   // nothing else starts until the current Terms are accepted
+  await Pin.gate();    // ...and until a PIN exists and the app is unlocked (the server enforces both)
   try { [S.info, S.settings, S.drives] = await Promise.all([API.info(), API.settings(), API.drives()]) }
   catch (e) { S.offline = true; S.info = { quick: [], user: '' }; S.settings = {}; S.drives = []; toastError(e) }
   renderUser(); renderFooter();

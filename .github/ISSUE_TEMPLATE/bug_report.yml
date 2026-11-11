@@ -25,5 +25,5 @@ body:
     id: log
     attributes:
       label: Log excerpt (optional)
-      description: From ~/.aurasort/aurasort.log (tokens, keys and your home folder are masked). Check it for private file names before pasting.
+      description: From ~/.aurasort/logs/server.log (or paste the output of: py server.py --doctor) (tokens, keys and your home folder are masked). Check it for private file names before pasting.
       render: text

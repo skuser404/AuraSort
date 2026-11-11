@@ -12,7 +12,7 @@ for a in "$@"; do
 done
 rm_() { if [ "$DRY" = 1 ]; then echo "would remove: $*"; else rm -rf "$@"; fi; }
 if [ -f "$DEST/server.py" ]; then rm_ "$DEST"; elif [ -e "$DEST" ]; then echo "$DEST does not look like AuraSort (no server.py). Left as it is."; fi
-rm_ "$HOME/.local/bin/aurasort" "$HOME/.local/share/applications/aurasort.desktop"
+rm_ "$HOME/.local/bin/aurasort" "$HOME/.local/share/applications/aurasort.desktop" "$HOME/Applications/AuraSort.command"
 if [ "$PURGE" = 1 ]; then
   rm_ "$HOME/.aurasort"
   if [ "$DRY" = 0 ]; then
@@ -21,3 +21,4 @@ if [ "$PURGE" = 1 ]; then
   fi
 fi
 echo "AuraSort was removed. Files it moved for you stay where they are."
+echo "Files kept by 'Replace' (and, on Android, deleted files) are still in folders named .AuraSortTrash; delete them yourself when no longer needed."

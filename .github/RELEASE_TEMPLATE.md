@@ -6,12 +6,17 @@ Release date: YYYY-MM-DD
 - …
 
 ## Install
-- Windows: `irm https://raw.githubusercontent.com/skuser404/aurasort/vX.Y.Z/scripts/install.ps1 | iex`
-- macOS / Linux: `curl -fsSL https://raw.githubusercontent.com/skuser404/aurasort/vX.Y.Z/scripts/install.sh | sh`
+Open a normal terminal in your user folder (not "Run as administrator"), then:
+- Windows: `irm https://github.com/skuser404/AuraSort/releases/latest/download/install.ps1 | iex`
+- macOS / Linux: `curl -fsSL https://github.com/skuser404/AuraSort/releases/latest/download/install.sh | sh`
+- Android (Termux, experimental): see the README.
+
+The release workflow attaches `aurasort.zip`, `install.ps1`, `install.sh`, `install-termux.sh` and `SHA256SUMS`. The
+installers refuse to install if the ZIP's SHA-256 does not match `SHA256SUMS`.
 
 ## SHA-256 checksums
 ```
-(paste SHA256SUMS here: the release workflow prints it)
+(the release workflow prints SHA256SUMS; paste it here)
 ```
 
 ## Known limitations

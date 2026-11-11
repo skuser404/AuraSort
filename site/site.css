@@ -1,0 +1,25 @@
+/* AuraSort public website (GitHub Pages front page). No fonts or scripts from elsewhere. */
+:root { --bg: #f6f6fb; --card: #fff; --txt: #1d1b2e; --mut: #5c5a70; --accent: #6a5ae0; --border: #e2e0ef }
+@media (prefers-color-scheme: dark) { :root { --bg: #15141d; --card: #1e1d29; --txt: #ecebf5; --mut: #a4a2b8; --accent: #a594fa; --border: #2e2c3d } }
+* { box-sizing: border-box }
+body { margin: 0; background: var(--bg); color: var(--txt); font: 16px/1.6 "Segoe UI", system-ui, -apple-system, Roboto, sans-serif }
+.wrap { width: min(1040px, 100%); margin: 0 auto; padding: 0 16px }
+a { color: var(--accent) }
+.top { display: flex; justify-content: space-between; align-items: center; padding-top: 20px; padding-bottom: 20px }
+.brand { display: flex; gap: 10px; align-items: center; color: var(--txt); text-decoration: none; font-size: 20px }
+.brand svg { width: 34px; height: 34px } .brand rect { fill: #7b6cf0 } .brand path { fill: none; stroke: #fff; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round }
+nav a { margin-left: 18px }
+.hero { padding: 40px 0 24px }
+h1 { font-size: clamp(28px, 4.4vw, 44px); line-height: 1.15; margin: 0 0 16px; letter-spacing: -.01em }
+h2 { font-size: 20px; margin: 32px 0 8px } h3 { font-size: 16px; margin: 18px 0 6px }
+.lead { font-size: 18px; max-width: 760px }
+.mut { color: var(--mut) }
+.cta { display: flex; flex-wrap: wrap; gap: 12px; margin: 22px 0 10px }
+.btn { display: inline-block; padding: 11px 18px; border-radius: 10px; border: 1px solid var(--border); background: var(--card); color: var(--txt); text-decoration: none; font-weight: 600 }
+.btn.pri { background: var(--accent); border-color: var(--accent); color: #fff }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin-top: 18px }
+.grid > div { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 4px 18px 14px }
+.grid h2 { font-size: 17px; margin-top: 14px }
+pre { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; overflow-x: auto }
+code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 14px }
+footer { padding: 36px 16px 48px; font-size: 14px }

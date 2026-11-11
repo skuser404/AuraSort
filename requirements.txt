@@ -1,0 +1,7 @@
+# Optional extras. AuraSort runs without them (standard library only); the installers add them before the first start.
+#   Windows:       py -m pip install --user -r requirements.txt
+#   macOS / Linux: python3 -m pip install -r requirements.txt   (inside a virtual environment, as the installer does)
+# Pinned versions with ready-made wheels for Python 3.10 to 3.14 on Windows, macOS (Intel and Apple Silicon) and Linux,
+# so nothing has to be compiled. (Pillow 11.0.0, pinned before, has no wheels for Python 3.14 and failed to install there.)
+Pillow==12.3.0   # faster, smaller image thumbnails
+pypdf==6.9.2     # reads more PDFs for Document Insights (a basic built-in reader is used otherwise)

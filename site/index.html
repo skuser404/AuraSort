@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AuraSort: free local file organizer and storage analyzer for Windows, macOS and Linux</title>
+<meta name="description" content="AuraSort is a free, open-source file organizer and storage analyzer that runs only on your computer. Find duplicate files, check for corrupted files, sort your Downloads folder, and see where your disk space goes. No upload, no account, never permanently deletes.">
+<link rel="canonical" href="https://skuser404.github.io/AuraSort/">
+<meta name="color-scheme" content="light dark">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="AuraSort">
+<meta property="og:title" content="AuraSort: a free, local file organizer and storage analyzer">
+<meta property="og:description" content="Find duplicate files, check for corrupted files, sort your Downloads folder and see where your space goes. Runs only on your computer.">
+<meta property="og:url" content="https://skuser404.github.io/AuraSort/">
+<meta property="og:image" content="https://skuser404.github.io/AuraSort/social-preview.png">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta property="og:image:alt" content="AuraSort: a free, local file organizer and storage analyzer for Windows, macOS and Linux">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="AuraSort: a free, local file organizer and storage analyzer">
+<meta name="twitter:description" content="Find duplicates, check for corrupted files, sort Downloads, see where your space goes. Local only.">
+<meta name="twitter:image" content="https://skuser404.github.io/AuraSort/social-preview.png">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect x='3' y='3' width='34' height='34' rx='10' fill='%237b6cf0'/%3E%3Cpath d='M13.5 28 20 12l6.5 16M15.9 22.5h8.2' fill='none' stroke='%23fff' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="site.css">
+<script type="application/ld+json">
+{"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "AuraSort",
+ "description": "A free, open-source file organizer and storage analyzer that runs only on your computer: find duplicate files, check for corrupted files, sort the Downloads folder and analyze disk space.",
+ "applicationCategory": "UtilitiesApplication", "operatingSystem": "Windows 10, Windows 11, macOS 12+, Linux",
+ "softwareVersion": "1.1.0", "license": "https://opensource.org/licenses/MIT", "isAccessibleForFree": true,
+ "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
+ "url": "https://skuser404.github.io/AuraSort/", "downloadUrl": "https://github.com/skuser404/AuraSort/releases/latest",
+ "codeRepository": "https://github.com/skuser404/AuraSort", "image": "https://skuser404.github.io/AuraSort/social-preview.png",
+ "author": {"@type": "Person", "name": "Sunil Kumar", "url": "https://github.com/skuser404"}}
+</script>
+</head>
+<body>
+<header class="wrap top">
+  <a class="brand" href="./"><svg viewBox="0 0 40 40" aria-hidden="true"><rect x="3" y="3" width="34" height="34" rx="10"/><path d="M13.5 28 20 12l6.5 16M15.9 22.5h8.2"/></svg><b>AuraSort</b></a>
+  <nav><a href="demo/?demo">Try the demo</a><a href="https://github.com/skuser404/AuraSort">GitHub</a></nav>
+</header>
+<main class="wrap">
+  <section class="hero">
+    <h1>AuraSort: a free, local file organizer and storage analyzer for Windows, macOS and Linux</h1>
+    <p class="lead">Scan your folders or whole drives, see where your space goes, find duplicate files, check for corrupted
+      files and sort your Downloads folder into tidy sub-folders. AuraSort runs only on your computer: nothing is uploaded,
+      there is no account, and nothing is ever permanently deleted.</p>
+    <p class="cta"><a class="btn pri" href="https://github.com/skuser404/AuraSort/releases/latest">Download AuraSort</a>
+      <a class="btn" href="demo/?demo">Try the demo in your browser</a></p>
+    <p class="mut">Free and open source (MIT). Needs Python 3.10 or newer. No administrator rights needed.</p>
+  </section>
+
+  <section class="grid">
+    <div><h2>Storage analyzer</h2><p>See which file types, folders and single files take your disk space, on every drive, with real numbers.</p></div>
+    <div><h2>Find duplicate files</h2><p>Identical files found by size, then sampled bytes, then every byte. Keep the newest, review the rest.</p></div>
+    <div><h2>Corrupted file checker</h2><p>A read-only check of pictures, videos, documents and archives that says what is wrong and what to do.</p></div>
+    <div><h2>Sort your Downloads</h2><p>Move or copy files into one folder per type, with a preview first. Every move can be undone.</p></div>
+    <div><h2>Safe by design</h2><p>Project and system folders are left alone, "delete" means the Recycle Bin, and name clashes ask you first.</p></div>
+    <div><h2>PIN lock</h2><p>AuraSort opens behind your PIN and asks again before every move, copy, delete, undo or replace.</p></div>
+  </section>
+
+  <section>
+    <h2>Install</h2>
+    <p>Open a normal terminal in your user folder (not "Run as administrator").</p>
+    <h3>Windows (PowerShell)</h3>
+    <pre><code>irm https://github.com/skuser404/AuraSort/releases/latest/download/install.ps1 | iex</code></pre>
+    <h3>macOS and Linux</h3>
+    <pre><code>curl -fsSL https://github.com/skuser404/AuraSort/releases/latest/download/install.sh | sh</code></pre>
+    <p>Step-by-step instructions, the manual method, Android (Termux, experimental) and troubleshooting are in the
+      <a href="https://github.com/skuser404/AuraSort#install">README</a>.</p>
+  </section>
+
+  <section>
+    <h2>Private by default</h2>
+    <p>AuraSort is a small program that listens only on <code>127.0.0.1</code> on your own computer. It has no telemetry, no
+      analytics and no ads, and it reads only file names, sizes and dates when it scans. The optional AI document feature is
+      off by default and works with a local engine. Read the <a href="https://github.com/skuser404/AuraSort/blob/main/PRIVACY_POLICY.md">Privacy Policy</a>.</p>
+  </section>
+</main>
+<footer class="wrap mut">AuraSort is free software under the MIT licence. The name and logo are not covered by the licence. ·
+  <a href="https://github.com/skuser404/AuraSort/issues">Issues</a> · <a href="https://github.com/skuser404/AuraSort/blob/main/TERMS_OF_USE.md">Terms</a></footer>
+</body>
+</html>

@@ -226,6 +226,8 @@ ACT['ai-private'] = async () => { // Why: a safe, undoable move of the confident
   try { await API.mkdir(root, 'Private').catch(e => { if (!/already exists/i.test(e.message)) throw e }) } catch (e) { toastError(e); return }
   const dest = joinPath(root, 'Private'), st = await preflight(ids); if (!st) return;
   const r = await actionDialog('move', ids, dest, st, null); if (!r) return;
-  try { const x = await API.execute({ ids, dest, mode: 'move', layout: r.layout, allow_project: r.allow_project, allow_viewonly: r.allow_viewonly }); if (x.count) Stage.open({ n: x.count, by_cat: x.by_cat }, x.job, { mode: 'move', dest, back: 'insights', fromSelection: true }) }
+  const body = { ids, dest, mode: 'move', layout: r.layout, allow_project: r.allow_project, allow_viewonly: r.allow_viewonly };
+  const clash = await resolveConflicts(body); if (clash === null) return;
+  try { const x = await API.execute(Object.assign(body, Object.keys(clash).length ? { conflicts: clash } : {})); if (x.count) Stage.open({ n: x.count, by_cat: x.by_cat }, x.job, { mode: 'move', dest, back: 'insights', fromSelection: true }) }
   catch (e) { toastError(e) }
 };

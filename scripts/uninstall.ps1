@@ -13,13 +13,17 @@
 #>
 [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
 param(
-  [string]$InstallDir = (Join-Path $env:LOCALAPPDATA 'Programs\AuraSort'),
+  [string]$InstallDir = '',   # default: the AuraSort folder this script is in, else %LOCALAPPDATA%\AuraSort
   [string]$StartMenuDir = (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'),
   [switch]$Purge,
   [switch]$Yes   # do not ask for confirmation (handy with: powershell -File uninstall.ps1 -Yes)
 )
 $ErrorActionPreference = 'Stop'
 if ($Yes) { $ConfirmPreference = 'None' }
+if (-not $InstallDir) {
+  $here = Split-Path -Parent $PSScriptRoot
+  $InstallDir = if (Test-Path (Join-Path $here 'server.py')) { $here } else { Join-Path $env:LOCALAPPDATA 'AuraSort' }
+}
 $shortcuts = @((Join-Path $StartMenuDir 'AuraSort.lnk'), (Join-Path ([Environment]::GetFolderPath('Desktop')) 'AuraSort.lnk'))
 foreach ($s in $shortcuts) { if ((Test-Path $s) -and $PSCmdlet.ShouldProcess($s, 'Remove shortcut')) { Remove-Item -Force $s } }
 if ((Test-Path (Join-Path $InstallDir 'server.py')) -and $PSCmdlet.ShouldProcess($InstallDir, 'Remove the AuraSort app folder')) {
@@ -38,3 +42,4 @@ if ($Purge) {
   }
 }
 Write-Host 'AuraSort was removed. Files it moved for you stay where they are.'
+Write-Host 'Files kept by "Replace" are still in folders named .AuraSortTrash at the top of their drives; delete those yourself when you no longer need them.'

@@ -1,0 +1,4 @@
+# Document Insights (optional AI). It needs no extra Python packages: the AI engine is a separate app you install
+# yourself (Ollama or LM Studio, see the README), and AuraSort talks to it on 127.0.0.1 with the standard library.
+# pypdf (in requirements.txt) lets it read more PDFs.
+-r requirements.txt

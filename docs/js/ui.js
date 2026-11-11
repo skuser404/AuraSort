@@ -28,6 +28,7 @@ ACT['toast-close'] = () => { $('#toast').hidden = true };
 
 /* ---------------- errors: a short human message, "Try again", and a safe "Copy details" report ---------------- */
 function toastError(e, { retry = null, what = '', paths = [] } = {}) { // Why: never a bare exception name; always a way forward
+  if (e && (e.code === 'pin_cancelled' || e.code === 'locked' || e.code === 'pin_not_set')) return;   // you cancelled, or the unlock screen is already showing
   ERR.last = { e, what, paths };
   ERR.retry = retry;
   toast(friendly(e) + (e && e.hint && !ERROR_TEXT[e.code] ? ' ' + e.hint : ''), 'err',
@@ -82,12 +83,14 @@ function modal(html, cls = '') {
   return m.firstElementChild;
 }
 function closeModal() { const m = $('#modal'); m.hidden = true; m.innerHTML = ''; if (closeModal.done) { const d = closeModal.done; closeModal.done = null; d(false) } }
-function confirmDialog({ title, body, ok = 'Continue', danger = false, check = '' }) { // Why: every risky step asks first (with an optional "I understand" tick)
+function confirmDialog({ title, body, ok = 'Continue', danger = false, check = '', typed = '' }) { // Why: every risky step asks first (with an optional "I understand" tick)
   return new Promise(res => {
     closeModal.done = res;
-    modal(`<h2>${esc(title)}</h2><div class="mut">${body}</div>${check ? `<label class="row" data-css="margin-top:14px"><input type="checkbox" id="cf-check"> <span>${esc(check)}</span></label>` : ''}
-      <div class="row" data-css="margin-top:20px;justify-content:flex-end"><button class="btn ghost" data-a="cf-no">Cancel</button><button class="btn ${danger ? 'danger' : 'pri'}" data-a="cf-yes" ${check ? 'disabled id="cf-ok"' : ''}>${esc(ok)}</button></div>`);
-    const c = $('#cf-check'); if (c) c.onchange = () => $('#cf-ok').disabled = !c.checked;
+    modal(`<h2>${esc(title)}</h2><div class="mut">${body}</div>${check ? `<label class="row" data-css="margin-top:14px"><input type="checkbox" id="cf-check"> <span>${esc(check)}</span></label>` : ''}${typed ? `<label class="ad-typed">Type <b>${esc(typed)}</b> to confirm<input type="text" id="cf-typed" autocomplete="off" spellcheck="false" aria-label="Type ${esc(typed)} to confirm"></label>` : ''}
+      <div class="row" data-css="margin-top:20px;justify-content:flex-end"><button class="btn ghost" data-a="cf-no">Cancel</button><button class="btn ${danger ? 'danger' : 'pri'}" data-a="cf-yes" ${check || typed ? 'disabled id="cf-ok"' : ''}>${esc(ok)}</button></div>`);
+    const c = $('#cf-check'), ty = $('#cf-typed'), okNow = () => (!c || c.checked) && (!ty || ty.value.trim() === typed);
+    if (c) c.onchange = () => { $('#cf-ok').disabled = !okNow() };
+    if (ty) { ty.oninput = () => { $('#cf-ok').disabled = !okNow() }; setTimeout(() => ty.focus(), 30) }
     ACT['cf-yes'] = () => { closeModal.done = null; closeModal(); res(true) };
     ACT['cf-no'] = () => closeModal();
   });
@@ -97,7 +100,7 @@ function confirmDialog({ title, body, ok = 'Continue', danger = false, check = '
 function tipHtml(key) {
   const x = S.summary && S.summary.by_cat[key]; if (!x) return '';
   return `<b>${esc(key)}</b><div class="tr"><span>Size</span><span class="num">${sz(x.size)}</span></div><div class="tr"><span>Files</span><span class="num">${fmt(x.n)}</span></div>
-    <div class="tr"><span>Share of scanned</span><span class="num">${pctTxt(pct(x.size, S.summary.total_size))}</span></div>${VIEW_ONLY.has(key) ? '<div class="tr"><span>View-only</span><span>yes</span></div>' : `<div class="tr"><span>Ready to sort</span><span class="num">${fmt(x.ready)}</span></div>`}`;
+    <div class="tr"><span>Share of scanned</span><span class="num">${pctTxt(share(x.size, S.summary.total_size))}</span></div>${VIEW_ONLY.has(key) ? '<div class="tr"><span>View-only</span><span>yes</span></div>' : `<div class="tr"><span>Ready to sort</span><span class="num">${fmt(x.ready)}</span></div>`}`;
 }
 function tipText(s) { // Why: simple "title|line|line" tooltips (calendar days, timeline months)
   const [head, ...rest] = String(s).split('|');

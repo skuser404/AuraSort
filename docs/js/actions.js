@@ -38,7 +38,7 @@ function actionDialog(kind, ids, dest, st, disk) { // kind: move | copy | trash.
         ${Object.keys(vo).length ? `<div class="note warn">${ic('eye')}<div><b>View-only types are left alone</b> unless you include them:${Object.entries(vo).map(([c, n]) => `<label class="row" data-css="margin-top:6px"><input type="checkbox" data-vo="${esc(c)}"> <span>Include ${esc(c)} (${fmt(n)})</span></label>`).join('')}</div></div>` : ''}
         ${kind === 'trash' && st.no_bin ? `<div class="note warn">${ic('alert')}<div><b>${fmt(st.no_bin)} ${filesWord(st.no_bin)}</b> are on a drive without a ${esc(binName())}, so they will be skipped. ${esc(APP.name)} never deletes permanently.</div></div>` : ''}
         ${kind === 'trash' ? `<div class="note">${ic('shield')}<div>Files stay in the ${esc(binName())} until you empty it, so you can restore them. ${esc(APP.name)} never deletes permanently.</div></div>`
-          : kind === 'move' ? `<div class="note ok">${ic('undo')}<div>Name clashes get “(1)” added, nothing is overwritten, and Undo in History puts every file back.</div></div>`
+          : kind === 'move' ? `<div class="note ok">${ic('undo')}<div>If a file with the same name is already there, you choose next: skip it, keep both, or replace. Nothing is overwritten silently, and Undo in History puts every file back.</div></div>`
           : `<div class="note">${ic('info')}<div>The originals stay where they are.${disk ? ` Free on the destination drive: <b class="num">${sz(disk.free)}</b>.` : ''}</div></div>`}
       </div>
       ${typed ? `<label class="ad-typed">To confirm, type <b class="num">${ids.length}</b><input type="text" id="ad-count" inputmode="numeric" autocomplete="off" aria-label="Type ${ids.length} to confirm"></label>` : ''}
@@ -64,6 +64,40 @@ function actionDialog(kind, ids, dest, st, disk) { // kind: move | copy | trash.
   });
 }
 
+/* ---------------- "a file with this name already exists" ---------------- */
+const CLASH_LABEL = { skip: 'Skip', keep: 'Keep both', replace: 'Replace' };
+async function resolveConflicts(body) { // Why: never overwrite silently: show every clash side by side and let you choose. Resolves to the
+  // choice ({action, skip_identical, per}), {} when there is no clash, or null if you cancelled.
+  const keys = ['ids', 'dest', 'mode', 'layout', 'flat', 'types', 'formats', 'kind', 'allow_project', 'allow_viewonly'];
+  let c; try { c = await API.conflicts(Object.fromEntries(keys.filter(k => body[k] !== undefined).map(k => [k, body[k]]))) } catch (e) { toastError(e); return null }
+  if (!c.total) return {};
+  const per = {};
+  return new Promise(res => {
+    closeModal.done = () => res(null);
+    const row = r => { const d = r.dst, newer = d && r.src.mtime > d.mtime ? 'src' : d && d.mtime > r.src.mtime ? 'dst' : '';
+      return `<tr data-fid="${r.fid}"><td><b title="${esc(r.target)}">${esc(r.name)}</b>${r.identical ? ' <span class="badge b-ok">identical content</span>' : ''}${r.within_selection ? ' <span class="badge b-mut">twice in your selection</span>' : ''}${d && d.readonly ? ' <span class="badge b-asset">read-only</span>' : ''}</td>
+        <td class="r">${sizeHtml(r.src.size)}<small class="mut" data-css="display:block">${esc(dt(r.src.mtime))}${newer === 'src' ? ' · newer' : ''}</small></td>
+        <td class="r">${d ? `${sizeHtml(d.size)}<small class="mut" data-css="display:block">${esc(dt(d.mtime))}${newer === 'dst' ? ' · newer' : ''}</small>` : '<span class="mut">another file in this batch</span>'}</td>
+        <td><select data-c="clash-one" data-fid="${r.fid}" aria-label="What to do with ${esc(r.name)}"><option value="">As chosen below</option>${Object.entries(CLASH_LABEL).filter(([k]) => d || k === 'keep').map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select></td></tr>`; };
+    modal(`<p class="eyebrow">Name clashes</p><h2>${fmt(c.total)} ${c.total === 1 ? 'file already exists' : 'files already exist'} in this folder</h2>
+      <p class="mut">${c.identical ? `${fmt(c.identical)} of them ${c.identical === 1 ? 'has' : 'have'} identical content. ` : ''}Nothing is overwritten unless you choose Replace, and then the existing file is kept in the ${esc(APP.name)} trash so Undo can put it back.</p>
+      <div class="tbl-wrap clash-tbl"><table class="tbl"><thead><tr><th>Name</th><th class="r">Coming in</th><th class="r">Already there</th><th>Do</th></tr></thead><tbody>${c.rows.map(row).join('')}</tbody></table></div>
+      ${c.more ? `<p class="mut">…and ${fmt(c.more)} more, handled by the choice below.</p>` : ''}
+      <label class="row" data-css="margin:14px 0 6px"><input type="checkbox" id="clash-same" checked> <span><b>Skip identical files</b> (recommended)</span></label>
+      <div class="seg" role="radiogroup" aria-label="For all other clashes">${Object.entries(CLASH_LABEL).map(([k, l]) => `<button role="radio" data-a="clash-all" data-k="${k}" class="${k === 'keep' ? 'on' : ''}" aria-checked="${k === 'keep'}">${l}</button>`).join('')}</div>
+      <p class="mut" id="clash-help" data-css="margin-top:8px"></p>
+      <div class="row" data-css="justify-content:flex-end;margin-top:16px"><button class="btn ghost" data-a="clash-no">Cancel</button><button class="btn pri" data-a="clash-ok">Continue</button></div>`, 'adlg');
+    let all = 'keep';
+    const help = { skip: 'Files that already exist are left where they are and not moved.', keep: 'The incoming file gets a new name, like “photo (1).jpg”.', replace: 'The existing file goes to the AuraSort trash (Undo restores it); the incoming file takes its place.' };
+    const paint = () => { $$('[data-a="clash-all"]').forEach(b => { b.classList.toggle('on', b.dataset.k === all); b.setAttribute('aria-checked', b.dataset.k === all) }); $('#clash-help').textContent = help[all] };
+    ACT['clash-all'] = t => { all = t.dataset.k; paint() };
+    CH['clash-one'] = t => { if (t.value) per[t.dataset.fid] = t.value; else delete per[t.dataset.fid] };
+    ACT['clash-no'] = () => closeModal();
+    ACT['clash-ok'] = () => { closeModal.done = null; closeModal(); res({ action: all, skip_identical: $('#clash-same') ? $('#clash-same').checked : false, per }) };
+    paint();
+  });
+}
+
 /* ---------------- flows ---------------- */
 async function preflight(ids) { try { return await API.selection(ids) } catch (e) { toastError(e); return null } }
 function moveOrCopy(mode, ids, single = false) { // Why: choose (or create) a folder, confirm with the exact numbers, then the move stage
@@ -75,8 +109,10 @@ function moveOrCopy(mode, ids, single = false) { // Why: choose (or create) a fo
       const st = await preflight(ids); if (!st) return;
       const disk = mode === 'copy' ? await API.disk(dest).catch(() => null) : null;
       const r = await actionDialog(mode, ids, dest, st, disk); if (!r) return;
+      const body = { ids, dest, mode, layout: r.layout, verify: r.verify, allow_project: r.allow_project, allow_viewonly: r.allow_viewonly };
+      const clash = await resolveConflicts(body); if (clash === null) return;
       try {
-        const x = await API.execute({ ids, dest, mode, layout: r.layout, verify: r.verify, allow_project: r.allow_project, allow_viewonly: r.allow_viewonly });
+        const x = await API.execute(Object.assign(body, Object.keys(clash).length ? { conflicts: clash } : {}));
         if (!x.count) { toast(`Nothing was ${mode === 'move' ? 'moved' : 'copied'}: every selected file is protected or view-only.`, 'err'); return }
         if (x.blocked) toast(`${fmt(x.blocked)} protected or view-only ${filesWord(x.blocked)} stayed where they are.`);
         closePreview();

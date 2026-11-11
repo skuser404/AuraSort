@@ -23,7 +23,8 @@ function viewScan(v) {
   <div class="scan-grid"><section class="card"><div class="seg" role="tablist" data-css="margin-bottom:18px">
       <button class="${st.mode === 'quick' ? 'on' : ''}" data-a="scanmode" data-m="quick" role="tab" aria-selected="${st.mode === 'quick'}">Quick Scan</button><button class="${st.mode === 'deep' ? 'on' : ''}" data-a="scanmode" data-m="deep" role="tab" aria-selected="${st.mode === 'deep'}">Deep Scan</button></div>
     ${st.mode === 'quick' ? `<h3>Your usual folders</h3><p class="mut">Downloads, Documents, Desktop, Pictures, Videos and Music, where files tend to pile up. Usually done in seconds.</p>
-      <div class="chips" data-css="margin:12px 0 4px">${quick.map(q => `<span class="chip" title="${esc(q.path)}">${ic('folder')}<span class="t">${esc(q.name)}</span></span>`).join('') || '<span class="mut">No standard folders found.</span>'}</div>`
+      <div class="chips" data-css="margin:12px 0 4px">${quick.map(q => `<span class="chip" title="${esc(q.path)}">${ic('folder')}<span class="t">${esc(q.name)}${q.onedrive ? ' (OneDrive)' : ''}</span></span>`).join('') || '<span class="mut">No standard folders found.</span>'}</div>
+      ${quick.length ? `<details class="qpaths"><summary class="mut">Exactly which folders</summary><ul class="mut fpath">${quick.map(q => `<li>${esc(q.path)}${q.onedrive ? ' <span class="badge b-mut">OneDrive</span>' : ''}</li>`).join('')}</ul></details>` : ''}`
     : `<h3>Drives</h3><p class="mut">Tick the drives to scan completely. System folders (Windows, Program Files, AppData and similar) are always skipped.</p>
       <div class="drives" data-css="margin:12px 0 18px">${S.drives.map(d => { const on = st.drives.has(d.root), p = d.total ? pct(d.used, d.total) : 0;
         return `<button class="drive ${on ? 'on' : ''} ${d.ready ? '' : 'off'}" data-a="drive" data-r="${esc(d.root)}" ${d.ready ? '' : 'disabled title="Not ready (unplugged, empty or not responding)"'} aria-pressed="${on}">
@@ -42,6 +43,7 @@ function viewScan(v) {
     <p class="mut auth-note">Only scan files you own or are authorised to manage.</p>
     ${risky ? `<div class="note warn">${ic('alert')}<div>${esc(risky)}</div></div>` : ''}
     ${S.scanFail ? scanFailHtml(S.scanFail) : ''}
+    ${S.scanResult ? scanExplainHtml(S.scanResult) : ''}
     <button class="btn pri lg" data-a="scan-start" ${scanReady(st) ? '' : 'disabled aria-describedby="start-help"'}>Start ${st.mode === 'quick' ? 'Quick' : 'Deep'} Scan</button>
     ${scanReady(st) ? '' : `<p class="mut start-help" id="start-help">${NOTHING_PICKED}</p>`}
     ${S.summary && S.summary.scan ? `<p class="mut" data-css="margin-top:14px">Last scan: ${S.summary.scan.mode === 'deep' ? 'Deep' : 'Quick'}, ${ago(S.summary.scan.finished)}, ${fmt(S.summary.total)} files${S.summary.scan.noaccess ? `, ${fmt(S.summary.scan.noaccess)} folders skipped (no access)` : ''}</p>` : ''}</aside></div>`;
@@ -83,8 +85,13 @@ async function startScan() {
   try {
     await API.scanStart(req);
     API.saveSettings({ drives: [...st.drives] }).catch(() => {});
-    S.scanFail = null; S.scan = { state: 'running', found: 0 }; render(false); pollScan();
+    S.scanFail = null; S.scanResult = null; S.scan = { state: 'running', found: 0 }; render(false); pollScan();
   } catch (e) { toastError(e, { retry: startScan, what: 'starting a scan', paths: req.roots }) }
+}
+function scanExplainHtml(r) { // Why: a scan that finds nothing (or nothing to sort) says why and what to do, never just zeros
+  return `<div class="scan-explain" role="status"><p><b>${r.found ? `The last scan found ${fmt(r.found)} files.` : 'The last scan found no files.'}</b>${r.skipped ? ` <span class="mut">${esc(r.skipped)}</span>` : ''}</p>
+    ${r.explain.map(x => `<div class="note explain">${ic('alert')}<div><h3>${esc(x.title)}</h3><p>${esc(x.body)}</p></div></div>`).join('')}
+    <div class="row" data-css="margin-top:10px"><button class="btn sm ghost" data-a="nav" data-v="settings">${ic('check')} Open Diagnostics</button></div></div>`;
 }
 function scanFailHtml(f) { // Why: a failed scan explains itself on the page, with a way forward (Try again, Copy details)
   return `<div class="note err scan-fail" role="alert">${ic('alert')}<div><b>The last scan stopped.</b> ${esc(f.message || ERROR_TEXT.internal)}${f.hint ? ` <span class="mut">${esc(f.hint)}</span>` : ''}
@@ -110,8 +117,10 @@ async function scanDone(s) {
   if (s.state === 'done') {
     notify(`Scan finished: ${fmt(s.found)} files`, `${sz(s.bytes)} · ${dur(s.elapsed)}`, 'scan'); toast(`Scan finished: ${fmt(s.found)} files (${sz(s.bytes)})${s.skipped_total ? `, ${fmt(s.skipped_total)} skipped` : ''}`, 'ok');
     S.extData = null; await refreshIndex();
+    S.scanResult = (s.explain && s.explain.length) ? { found: s.found, explain: s.explain, skipped: skippedText(s) } : null;
     const p = S.pending; S.pending = null;
-    if (p && p.has) { applyParams(p); render(); syncURL('replace'); syncSearchBox() } else go('dashboard');
+    if (!s.found) { S.view = 'scan'; render(false); syncURL('replace') }   // stay here: the explanation is the next step, not an empty dashboard
+    else if (p && p.has) { applyParams(p); render(); syncURL('replace'); syncSearchBox() } else go('dashboard');
   } else if (s.state === 'cancelled') { toast('Scan cancelled. Your previous index is kept.'); render(false) }
   else {
     const f = Object.assign({ message: (s.errors || [])[0] || ERROR_TEXT.internal }, s.failure || {}, { paths: s.roots || [] });

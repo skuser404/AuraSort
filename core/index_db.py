@@ -56,11 +56,19 @@ def norm_lower(name):
     return unicodedata.normalize("NFC", name).lower()
 
 
+SCHEMA_VERSION = 2          # PRAGMA user_version: 0 = 1.0.0 (no version yet), 2 = this layout
+JOURNAL = {"mode": ""}      # the journal mode actually in use (shown by --doctor)
+
+
 def _connect():
-    """Why: WAL lets the UI read while a scan writes; NORMAL sync is safe in WAL and much faster."""
+    """Why: WAL lets the UI read while a scan writes; NORMAL sync is safe in WAL and much faster. Some folders (network
+    shares, a few sync tools) cannot do WAL: SQLite then keeps its normal journal, which is slower but correct."""
     conn = sqlite3.connect(str(config.INDEX_DB), timeout=30, check_same_thread=False)
     try:
-        conn.execute("PRAGMA journal_mode=WAL")
+        mode = str(conn.execute("PRAGMA journal_mode=WAL").fetchone()[0]).lower()
+        if mode != "wal" and JOURNAL["mode"] != mode:
+            log.warning("the file index cannot use WAL in this folder; using journal mode %r instead (slower, still safe)", mode)
+        JOURNAL["mode"] = mode
         conn.execute("PRAGMA synchronous=NORMAL")
         conn.execute("PRAGMA temp_store=MEMORY")
         conn.execute("PRAGMA cache_size=-32000")
@@ -123,23 +131,37 @@ def _set_aside_broken():
     log.warning("the file index was damaged; it was renamed to index.sqlite3.broken-%s and a new one was created", stamp)
 
 
+def _upgrade(w):
+    """Why: the stored schema version says whether this index came from an older AuraSort; migrate it, then stamp it."""
+    have = w.execute("PRAGMA user_version").fetchone()[0]
+    if have > SCHEMA_VERSION:
+        log.warning("the file index was written by a newer AuraSort (schema %s); it is rebuilt by the next scan", have)
+        for table in REBUILDABLE:
+            w.execute(f"DROP TABLE IF EXISTS {table}")  # nosec B608  # fixed tuple
+    elif have < SCHEMA_VERSION:
+        migrate(w)
+    w.executescript(SCHEMA)
+    w.execute(f"PRAGMA user_version={SCHEMA_VERSION}")  # nosec B608  # an int constant
+
+
 def init():
-    """Why: create (or update) the schema once and keep the database (and its WAL files) readable by the user only."""
+    """Why: create (or update) the schema once and keep the database (and its WAL files) readable by the user only.
+    If an old or damaged index cannot be upgraded it is set aside and rebuilt: it only caches what a scan can re-read."""
     config.DATA_DIR.mkdir(parents=True, exist_ok=True)
     fresh = not config.INDEX_DB.exists()
     with _write_lock:
         try:
             w = writer()
-            migrate(w)
-            w.executescript(SCHEMA)
+            _upgrade(w)
         except sqlite3.DatabaseError as ex:
-            if "not a database" not in str(ex) and "malformed" not in str(ex):
-                raise
+            if any(w in str(ex).lower() for w in ("locked", "busy", "readonly", "disk i/o", "unable to open")):
+                raise                          # a busy or unwritable index is not damaged: never set a good one aside
+            log.warning("the file index could not be opened or upgraded (%s: %s); setting it aside", type(ex).__name__, ex)
             close_all()                    # Windows can't rename a file this process still has open
             _set_aside_broken()
             fresh = True
             w = writer()
-            w.executescript(SCHEMA)
+            _upgrade(w)
         w.commit()
     if fresh:
         for suffix in ("", "-wal", "-shm"):
@@ -278,6 +300,9 @@ class ScanWriter:
             c.execute("DELETE FROM projects WHERE seen IS NOT ?", (sid,))
             c.execute("DELETE FROM integrity WHERE file NOT IN (SELECT id FROM files)")
             c.execute("DELETE FROM hashes WHERE file NOT IN (SELECT id FROM files)")
+        orphans = c.execute("DELETE FROM files WHERE dir NOT IN (SELECT id FROM dirs)").rowcount   # rows no list could show
+        if orphans:
+            log.error("the file index had %s file rows without a folder; they were removed", orphans)
         c.commit()
         c.execute("ANALYZE")   # fresh statistics so the planner picks the right index on large indexes
         c.commit()
@@ -486,25 +511,45 @@ def rows_by_ids(ids):
 
 
 def extensions():
-    """Why: the 'All extensions' page lists every extension with count, size and category."""
+    """Why: the 'All extensions' page lists every extension with count, size and category. disk_size leaves out
+    online-only files: they take no space on this PC, so counting them made '% of disk' go past 100%."""
     def build():
-        rows = reader().execute("SELECT ext, cat, COUNT(*), SUM(size) FROM files GROUP BY ext, cat ORDER BY 4 DESC").fetchall()
-        return [dict(ext=e, cat=c, n=n, size=s) for e, c, n, s in rows]
+        rows = reader().execute(f"SELECT ext, cat, COUNT(*), SUM(size), SUM(CASE WHEN flags & {FLAG_CLOUD} THEN 0 ELSE size END) "  # nosec B608  # an int constant
+                                "FROM files GROUP BY ext, cat ORDER BY 4 DESC").fetchall()
+        return [dict(ext=e, cat=c, n=n, size=s or 0, disk_size=d or 0) for e, c, n, s, d in rows]
     return cached("extensions", build)
+
+
+def consistency():
+    """Why: every number on screen must come from the same rows. Totals, category badges and lists are compared; a
+    difference is logged as an error and shown as 'refresh data' instead of silently wrong numbers."""
+    def build():
+        db = reader()
+        files = db.execute("SELECT COUNT(*) FROM files").fetchone()[0]
+        joined = db.execute("SELECT COUNT(*) FROM files JOIN dirs ON dirs.id=files.dir").fetchone()[0]
+        by_cat = dict(db.execute("SELECT cat, COUNT(*) FROM files JOIN dirs ON dirs.id=files.dir GROUP BY cat").fetchall())
+        unknown = sum(n for c, n in by_cat.items() if c not in classify.CATEGORY_NAMES)
+        ok = files == joined == sum(by_cat.values()) and not unknown
+        if not ok:
+            log.error("index numbers disagree: %s file rows, %s with a folder, %s by category, %s in unknown categories", files, joined, sum(by_cat.values()), unknown)
+        return dict(ok=ok, files=files, with_folder=joined, by_category=sum(by_cat.values()), unknown_category=unknown)
+    return cached("consistency", build)
 
 
 def summary():
     """Why: the dashboard's numbers (all real) in one cached query set."""
     def build():
         db = reader()
-        by = {c: dict(n=0, size=0, ready=0, ready_size=0) for c in classify.CATEGORY_NAMES}
-        for cat, n, size, rn, rs in db.execute(
-                "SELECT files.cat, COUNT(*), SUM(files.size), SUM(dirs.included), SUM(CASE WHEN dirs.included=1 THEN files.size ELSE 0 END) "
+        by = {c: dict(n=0, size=0, ready=0, ready_size=0, disk_size=0) for c in classify.CATEGORY_NAMES}
+        for cat, n, size, rn, rs, ds in db.execute(
+                "SELECT files.cat, COUNT(*), SUM(files.size), SUM(dirs.included), SUM(CASE WHEN dirs.included=1 THEN files.size ELSE 0 END), "
+                f"SUM(CASE WHEN files.flags & {FLAG_CLOUD} THEN 0 ELSE files.size END) "  # nosec B608  # an int constant
                 "FROM files JOIN dirs ON dirs.id=files.dir GROUP BY files.cat"):
             movable = cat in classify.MOVABLE
-            by.setdefault(cat, dict(n=0, size=0, ready=0, ready_size=0)).update(
-                n=n, size=size or 0, ready=(rn or 0) if movable else 0, ready_size=(rs or 0) if movable else 0)
+            by.setdefault(cat, dict(n=0, size=0, ready=0, ready_size=0, disk_size=0)).update(
+                n=n, size=size or 0, ready=(rn or 0) if movable else 0, ready_size=(rs or 0) if movable else 0, disk_size=ds or 0)
         total = sum(v["n"] for v in by.values())
+        cloud_n, cloud_size = db.execute(f"SELECT COUNT(*), COALESCE(SUM(size), 0) FROM files WHERE flags & {FLAG_CLOUD}").fetchone()  # nosec B608  # an int constant
         projects = [dict(path=p, n=n, size=s or 0) for p, n, s in db.execute(
             "SELECT projects.path, COUNT(files.id), SUM(files.size) FROM projects JOIN dirs ON dirs.project=projects.id "
             "JOIN files ON files.dir=dirs.id GROUP BY projects.id ORDER BY 2 DESC LIMIT 50")]
@@ -518,6 +563,7 @@ def summary():
                    for c in SCENE_CATS}   # real names for the dashboard scene (names only, no paths)
         ready = sum(v["ready"] for v in by.values())
         return dict(version=version(), scan=last_scan(), by_cat=by, total=total, total_size=sum(v["size"] for v in by.values()),
+                    disk_size=sum(v["disk_size"] for v in by.values()), cloud_n=cloud_n, cloud_size=cloud_size, consistent=consistency()["ok"],
                     ready=ready, ready_size=sum(v["ready_size"] for v in by.values()), left_alone=total - ready,
                     projects=projects, project_count=kinds.get("project", 0), asset_dirs=kinds.get("assets", 0),
                     biggest_folders=big_dirs, biggest_files=big_files, samples=samples)

@@ -1,7 +1,7 @@
 # Terms of Use (Terms and Conditions)
 
-Version: 1.0.0
-Effective date: 10 November 2026
+Version: 1.1.0
+Effective date: 11 November 2026
 Owner: Sunil Kumar (GitHub: skuser404)
 
 > **Note:** Template provided for convenience, not legal advice. Have a qualified lawyer review before relying on it.
@@ -40,6 +40,9 @@ AuraSort detects project folders and system folders, keeps some file types view-
 Recycle Bin / Trash instead of permanent deletion, and verifies copies between drives. These features reduce risk, but
 they cannot guarantee that nothing breaks. Project detection can miss unusual projects. Undo works only for moves, and
 only while the files are still where AuraSort put them. Files sent to the Recycle Bin / Trash can be lost if you empty it.
+The PIN lock protects AuraSort on your computer against casual misuse; it does not stop someone who is signed in to your
+operating-system account from using other programs, so also lock your screen. A forgotten PIN cannot be recovered:
+resetting it removes AuraSort's own settings, History (including Undo) and index, never your files.
 
 ## 6. Automated checks are aids, not verdicts
 Corrupted-file detection and confidential-file detection are automated aids. They can miss problems, and they can flag
@@ -80,5 +83,5 @@ These Terms are governed by the laws of [OWNER TO CONFIRM: suggested placeholder
 to use your local courts.
 
 ## 15. Contact
-General questions: [GitHub Issues](https://github.com/skuser404/aurasort/issues).
-Security problems: privately through [GitHub Security Advisories](https://github.com/skuser404/aurasort/security/advisories/new).
+General questions: [GitHub Issues](https://github.com/skuser404/AuraSort/issues).
+Security problems: privately through [GitHub Security Advisories](https://github.com/skuser404/AuraSort/security/advisories/new).

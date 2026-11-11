@@ -4,14 +4,14 @@ const storageTabs = cur => `<div class="seg" role="tablist" data-css="margin-bot
   .map(([v, l, i]) => `<button class="${cur === v ? 'on' : ''}" data-a="nav" data-v="${v}" role="tab" aria-selected="${cur === v}">${ic(i)} ${l}</button>`).join('')}</div>`;
 
 function viewStorage(v) {
-  const s = S.summary, tot = s.total_size || 1, rows = CATS.map(c => ({ c, x: s.by_cat[c.key] || { n: 0, size: 0, ready: 0 } })).sort((a, b) => b.x.size - a.x.size);
+  const s = S.summary, tot = s.total_size, rows = CATS.map(c => ({ c, x: s.by_cat[c.key] || { n: 0, size: 0, ready: 0 } })).sort((a, b) => b.x.size - a.x.size);
   v.innerHTML = `<div class="page-head"><div><p class="eyebrow">Storage Analysis</p><h1>Where your space goes</h1><p>${fmt(s.total)} files · ${sz(s.total_size)} scanned. All 14 file types are listed, including the ones you have none of.</p></div></div>
     ${storageTabs('storage')}
     <section class="card"><div class="card-h"><h2>Space by file type</h2><small>select a row to see those files</small></div>
-      <div class="segbar">${rows.filter(r => r.x.size).map((r, i) => `<button class="sg" data-css="--c:${r.c.c};flex-grow:${(r.x.size / tot).toFixed(5)};animation-delay:${i * 40}ms" data-a="nav-type" data-k="${esc(r.c.key)}" data-tip="${esc(r.c.key)}" aria-label="${esc(r.c.key)} ${sz(r.x.size)}"></button>`).join('')}</div>
+      <div class="segbar">${rows.filter(r => r.x.size).map((r, i) => `<button class="sg" data-css="--c:${r.c.c};flex-grow:${(pct(r.x.size, tot) / 100).toFixed(5)};animation-delay:${i * 40}ms" data-a="nav-type" data-k="${esc(r.c.key)}" data-tip="${esc(r.c.key)}" aria-label="${esc(r.c.key)} ${sz(r.x.size)}"></button>`).join('')}</div>
       <div class="tbl-wrap" data-css="margin-top:16px"><table class="tbl"><thead><tr><th>Type</th><th class="r">Files</th><th class="r">Size</th><th>Share</th><th class="r">Ready to sort</th></tr></thead><tbody>
       ${rows.map(r => `<tr class="${r.x.n ? '' : 'dim'}"><td><button class="link" data-a="nav-type" data-k="${esc(r.c.key)}" data-css="color:inherit;text-decoration:none;display:inline-flex;gap:10px;align-items:center"><span class="ficon" data-css="--c:${r.c.c};width:34px;height:34px">${ic(r.c.ic)}</span><b>${esc(r.c.key)}</b></button> ${r.c.vo ? '<span class="badge b-vo">view-only</span>' : ''}</td>
-        <td class="r num">${fmt(r.x.n)}</td><td class="r">${sizeHtml(r.x.size)}</td><td><div class="row" data-css="flex-wrap:nowrap"><span class="mini" data-css="flex:1;min-width:80px"><i data-css="width:${pct(r.x.size, tot).toFixed(1)}%"></i></span><span class="num">${pctTxt(pct(r.x.size, tot))}</span></div></td><td class="r num">${r.c.vo ? '—' : fmt(r.x.ready)}</td></tr>`).join('')}
+        <td class="r num">${fmt(r.x.n)}</td><td class="r">${sizeHtml(r.x.size)}</td><td><div class="row" data-css="flex-wrap:nowrap"><span class="mini" data-css="flex:1;min-width:80px"><i data-css="width:${pct(r.x.size, tot).toFixed(1)}%"></i></span><span class="num">${pctTxt(share(r.x.size, tot))}</span></div></td><td class="r num">${r.c.vo ? '—' : fmt(r.x.ready)}</td></tr>`).join('')}
       </tbody></table></div></section>`;
 }
 
@@ -29,15 +29,15 @@ async function loadExtensions() {
 }
 function drawExtensions() {
   const box = $('#extbox'); if (!box) return;
-  const q = (S.extQ || '').toLowerCase().replace(/^\./, ''), k = S.extSort || 'size', disk = S.extData.disk_total || 0, totalSize = S.extData.rows.reduce((a, r) => a + r.size, 0) || 1;
+  const q = (S.extQ || '').toLowerCase().replace(/^\./, ''), k = S.extSort || 'size', disk = S.extData.disk_total || 0, totalSize = S.extData.rows.reduce((a, r) => a + r.size, 0);
   let rows = S.extData.rows.filter(r => !q || r.ext.includes(q) || r.cat.toLowerCase().includes(q));
   rows.sort(k === 'n' ? (a, b) => b.n - a.n : k === 'ext' ? (a, b) => a.ext.localeCompare(b.ext) : k === 'cat' ? (a, b) => a.cat.localeCompare(b.cat) || b.size - a.size : (a, b) => b.size - a.size);
-  const share = r => disk ? pct(r.size, disk) : pct(r.size, totalSize);
+  const shareOf = r => disk ? share(r.disk_size ?? r.size, disk) : share(r.size, totalSize);   // Why: online-only files take no disk space
   box.innerHTML = `<div class="vhead ext-row"><span>Extension</span><span>Files</span><span>Size</span><span>${disk ? '% of disk' : '% of scanned'}</span><span>Category</span></div><div class="vlist" id="extlist"></div>
     <p class="mut" data-css="margin:10px 12px">${fmt(rows.length)} extensions · ${sz(rows.reduce((a, r) => a + r.size, 0))}</p>`;
   applyCss(box);
   virtualList($('#extlist'), rows, 52, r => `<button class="link" data-a="extopen" data-x="${esc(r.ext)}" data-css="text-align:left"><span class="ext">.${esc(r.ext || 'none')}</span></button><span class="num">${fmt(r.n)}</span>${sizeHtml(r.size)}
-    <span class="row" data-css="flex-wrap:nowrap"><span class="mini" data-css="flex:1"><i data-css="width:${Math.max(1, Math.min(100, share(r) * (disk ? 20 : 1))).toFixed(1)}%"></i></span><span class="num">${share(r) < .01 && share(r) > 0 ? '<0.01' : share(r).toFixed(2)}%</span></span>
+    <span class="row" data-css="flex-wrap:nowrap"><span class="mini" data-css="flex:1"><i data-css="width:${Math.max(1, Math.min(100, (shareOf(r) ?? 0) * (disk ? 20 : 1))).toFixed(1)}%"></i></span><span class="num">${shareOf(r) == null ? 'n/a' : shareOf(r) < .01 && shareOf(r) > 0 ? '<0.01%' : shareOf(r).toFixed(2) + '%'}</span></span>
     <span class="row" data-css="flex-wrap:nowrap;--c:${(CAT[r.cat] || CAT.Other).c}"><span data-css="color:var(--c)">${ic((CAT[r.cat] || CAT.Other).ic)}</span>${esc(r.cat)}</span>`, 'ext-row');
 }
 CH.extq = t => { S.extQ = t.value; drawExtensions() };

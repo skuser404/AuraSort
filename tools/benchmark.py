@@ -47,7 +47,7 @@ def build_tree(base, n):
             f.write(b"x" * (i % 97))
         if i and i % 50000 == 0:
             print(f"  created {i:,} files ({time.time() - t0:.0f} s)")
-    marker.write_text("ok")
+    marker.write_text("ok", encoding="utf-8")
     print(f"created {n:,} files in {time.time() - t0:.0f} s")
 
 

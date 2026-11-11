@@ -31,11 +31,19 @@ browser (docs/)  --fetch + X-AuraSort-Token-->  server.py (routes)  -->  core/* 
 | `integrity.py`, `checks.py` | Read-only integrity checks (quick/deep), duplicates (size, partial hash, full hash), cleanup rules. |
 | `signing.py` | Short-lived HMAC links for thumbnails and previews (the token never goes into a URL). |
 | `extract.py`, `sensitive.py`, `llm.py`, `docai.py`, `hardware.py`, `keystore.py` | Document Insights: text extraction (size-capped), deterministic confidential rules with checksums and masking, local/cloud model clients with strict JSON validation, the in-memory results store with its timer, hardware facts, API-key storage. |
-| `platform_utils.py`, `log.py`, `settings.py` | OS specifics (drives, known folders, opening files, permissions), redacting log, validated settings. |
+| `platform_utils.py`, `log.py`, `settings.py` | OS specifics (drives, Windows Known Folders / XDG user dirs / Android storage, reparse-point rules, long paths, opening files, permissions), redacting log, validated settings. |
+| `pin.py` | The PIN lock: scrypt hash + persisted lockout in `pin.json`, the unlocked session with its idle timeout, and single-use action tokens bound to one request. Enforced for every route in `web.py`. |
+| `conflicts.py` | Name clashes in a destination: the preview (both sides, identical content), the validated choice (skip / keep / replace, per file or for all). |
+| `apptrash.py` | AuraSort's own trash (`.AuraSortTrash` on the same drive, index in `apptrash.json`): Android deletes and files set aside by Replace; Restore; the opt-in purge timer. |
+| `doctor.py` | `server.py --doctor` and Settings > Diagnostics: independent checks with masked paths and a 3-second test scan using the scanner's own rules. |
 
 ### Data
 Everything lives in `~/.aurasort` (user-only permissions): `index.sqlite3`, `history/*.json`, `thumbs/`, `settings.json`,
-`logs/server.log`. Document Insights results are **never** written there: they stay in the server's memory.
+`logs/server.log`, `pin.json` (salt, scrypt hash, wrong-try counter; never the PIN), `apptrash.json`. Files kept by Replace
+(and Android deletes) live in `.AuraSortTrash` at the top of their own drive, so setting them aside is a rename.
+The index carries a schema version (`PRAGMA user_version`, now 2; 1.0.0 had none): an older index is migrated, a newer or
+unreadable one is set aside and rebuilt by the next scan. After each scan file rows without a folder are removed, and
+`index_db.consistency()` compares totals, categories and lists (a difference is logged and shown as "refresh data"). Document Insights results are **never** written there: they stay in the server's memory.
 `index_db.init()` updates an index written by an earlier version (outdated index tables are recreated and refilled by the
 next scan; the scan list and storage snapshots get missing columns added) and sets aside a damaged index file as
 `index.sqlite3.broken-<time>`. Settings and History entries from earlier versions are read with defaults for every field.
@@ -58,7 +66,23 @@ The scan request (`POST /api/scan/start`, built only by `scanRequest()` in `docs
 `/api/scan/estimate` takes `mode` and `roots` with the same rules. `/api/scan/status` returns the job snapshot plus
 `found, bytes, dirs, by_cat, recent, drives[], noaccess, skipped{reason: n}, skipped_total, skipped_reasons[], step,
 failure`. Skip reasons: `no_access`, `vanished`, `unreadable`, `bad_name` (a name SQLite cannot store), `missing_root`,
-`error` (an unexpected problem in one folder; its traceback is in the log).
+`error` (an unexpected problem in one folder; its traceback is in the log), `link` (symlinks and junctions only: OneDrive
+placeholders and other non-"name surrogate" reparse points are listed), `hidden`, `protected`, `system_file`, `skip_list`.
+`notes{}` counts files that were listed but are special: `online_only`, `partial`, `project`, `other_ext`. A finished scan
+has `explain[]` ({code, title, body}) whenever it found nothing, or nothing that can be sorted.
+
+Moves and copies (`POST /api/execute`, `/api/quarantine`) take `conflicts: {action: "skip"|"keep"|"replace",
+skip_identical: bool, per: {"<file id>": action}}` (default: keep both). `POST /api/conflicts` takes the same request (plus
+`kind: "quarantine"`) and returns `{total, identical, rows[{fid, name, target, src{size, mtime}, dst{size, mtime, readonly},
+identical, within_selection}], more}` without changing anything.
+
+### PIN lock
+- No PIN yet: every route except `info` and `pin/*` answers 423 `pin_not_set`. Locked (or idle for longer than
+  `pin_idle_min`): 423 `locked`. `/api/info` then returns no paths or folders.
+- `POST /api/pin/verify {pin, action, request}` returns an `action_token` for one request: valid 60 s, used once, bound to
+  the action and a SHA-256 of the canonical request body. `config.PIN_GUARDED` lists the routes that need one (execute,
+  quarantine, trash, undo, data/delete, interrupted/resume|clean, ai/key, ai/reset, apptrash/restore, pin/settings);
+  `web.py` consumes it before the route runs. Wrong PINs count towards a lockout stored in `pin.json`.
 
 ### Errors
 - API errors are always `{"error": "<plain sentence>", "code": "<stable code>", "hint": "<what to do>"}`. Invalid input is
@@ -89,6 +113,10 @@ and URL parameters), `api.js` (real API or the demo backend in `demo.js`), `ui.j
 - `tests/e2e/*.mjs`: browser tests driving Edge/Chrome through the DevTools protocol on a fixture home built by
   `tools/make_fixtures.py`, plus a screenshot sweep of every page in both themes.
 - `tests/e2e/full.pw.mjs`: the whole app through Playwright (test-only dependency, uses the installed Edge): every page,
-  every scan combination, move + undo, Recycle Bin, preview, integrity check, Settings and Legal. It fails on any console
-  error, any failed request (4xx/5xx) and any error toast.
+  every scan combination, the PIN screens and prompts (wrong PIN, cancel, lock/unlock), move + undo, a name clash with
+  Replace + Undo, Recycle Bin, preview, integrity check, Diagnostics, Settings and Legal. It fails on any console error,
+  any failed request (4xx/5xx) and any error toast outside the blocks that cause one on purpose.
+- `tools/ci_smoke.py` (an installed copy in a clean home: PIN, scan, more than 0 files), `tools/readme_blocks.py` (the
+  README's install commands), `tools/check_readme_urls.py` (every README link answers 200): run by CI on Windows, macOS
+  and Linux with Python 3.10 to 3.14. Manual checks for clean machines: [MANUAL_TESTS.md](MANUAL_TESTS.md).
 - `tools/benchmark.py`, `tools/bench_copy.py`: measured performance, printed as numbers.

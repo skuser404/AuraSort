@@ -1,7 +1,7 @@
 /* AuraSort - legal documents in the app: the first-run "Before you start" gate, an offline viewer for the same Markdown
    files that ship in the repo, the footer, and Settings > Legal (accepted version, "Delete my AuraSort data"). */
 'use strict';
-const TERMS_VERSION = '1.0.0';            // must match "Version:" in TERMS_OF_USE.md; a new version shows the gate again
+const TERMS_VERSION = '1.1.0';            // must match "Version:" in TERMS_OF_USE.md; a new version shows the gate again
 const TERMS_KEY = 'aurasort.terms';
 const LEGAL = {
   terms: ['TERMS_OF_USE.md', 'Terms of Use'], rules: ['ACCEPTABLE_USE.md', 'Rules of use'], privacy: ['PRIVACY_POLICY.md', 'Privacy Policy'],
@@ -93,7 +93,7 @@ async function openLegal(key) { // Why: the same files that ship in the repo, re
 ACT.legal = t => openLegal(t.dataset.doc);
 
 function renderFooter() { // Why: version and the two most important documents, on every page
-  const v = (S.info && S.info.version) || '1.0.0';
+  const v = (S.info && S.info.version) || '1.1.0';
   $('#foot').innerHTML = `<span>${esc(APP.name)} v${esc(v)}</span><span aria-hidden="true">·</span><button class="link" data-a="legal" data-doc="terms">Terms</button><span aria-hidden="true">·</span><button class="link" data-a="legal" data-doc="privacy">Privacy</button>`;
 }
 

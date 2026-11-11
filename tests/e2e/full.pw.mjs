@@ -7,7 +7,7 @@
 // Usage: node tests/e2e/full.pw.mjs --home <fixture home> [--url http://localhost:8799] [--out <dir>] [--pw <folder with node_modules>]
 // Start the server with AURASORT_STRICT_SCHEMA=1 so an unknown request field is a 400 (and therefore a failure here).
 import { createRequire } from 'node:module';
-import { existsSync, readdirSync, mkdirSync } from 'node:fs';
+import fs, { existsSync, readdirSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -41,6 +41,10 @@ await page.addInitScript(() => {   // every error toast is recorded, even if it 
   });
 });
 const ev = (fn, a) => page.evaluate(fn, a);
+const PIN = '4826';
+const enterPin = async (value = PIN) => {   // the PIN prompt before a move, copy, delete, undo or replace
+  await page.waitForSelector('#pinbox:not([hidden]) #pin-x'); await page.fill('#pin-x', value); await page.click('#pin-ok');
+};
 const toasts = async () => { const t = await ev(() => window.__errToasts.splice(0)); t.forEach(x => note('error toast', x)); return t };
 const waitFor = (fn, a, ms = 15000) => page.waitForFunction(fn, a, { timeout: ms });
 const nav = async v => { await page.click(`[data-a=nav][data-v=${v}]`); await waitFor(v => S.view === v && !document.querySelector('#view .skel'), v, 15000).catch(() => {}); await page.waitForTimeout(250) };
@@ -68,8 +72,29 @@ try {
   await ev(() => localStorage.removeItem('aurasort.terms')); await page.reload();
   await page.waitForSelector('#gate:not([hidden])');
   await page.check('#gate-ok'); await page.click('#gate-go');
-  await waitFor(() => !!S.info);
   check(true, 'terms gate accepted through the UI');
+
+  /* ---------- PIN: this computer, set your PIN, the bear ---------- */
+  await page.waitForSelector('#pin-next');
+  const facts = await page.textContent('.pin-facts');
+  check(/Device/.test(facts) && /Signed in as/.test(facts) && /AuraSort will ask for your PIN here/.test(await page.textContent('#gate')), '"This computer" shows the device and user name and says the PIN will be asked here');
+  await page.mouse.move(5, 5); await page.waitForTimeout(250);
+  check(await ev(() => !!document.querySelector('#pal .pp-pupil').getAttribute('transform')), 'the eyes follow the cursor');
+  await page.click('#pin-next'); await page.waitForSelector('#pin-a');
+  check(await page.getAttribute('#pin-a', 'inputmode') === 'numeric' && await page.getAttribute('#pin-a', 'autocomplete') === 'off', 'PIN fields: numeric keypad, no autofill');
+  await page.fill('#pin-a', '1234');
+  check(await ev(() => document.querySelector('#pal').classList.contains('is-cover')), 'typing a masked PIN: the bear covers its eyes');
+  check(/easy to guess/.test(await page.textContent('#pin-msg')), 'a weak PIN (1234) gets a warning');
+  await page.check('#pin-showbox');
+  check(await ev(() => document.querySelector('#pal').classList.contains('is-peek')) && await page.getAttribute('#pin-a', 'type') === 'text', '"Show PIN": the bear peeks and the digits show');
+  await page.uncheck('#pin-showbox');
+  await page.fill('#pin-a', PIN); await page.fill('#pin-b', '4827');
+  check(await page.isDisabled('#pin-start') && /different/.test(await page.textContent('#pin-msg')), 'two different PINs: Start stays disabled');
+  await page.fill('#pin-b', PIN);
+  await page.click('#pin-start');
+  await waitFor(() => !!S.info && !S.info.locked && document.querySelector('#gate').hidden);
+  check(await ev(() => !localStorage.getItem('aurasort.pin') && !Object.keys(localStorage).some(k => localStorage.getItem(k).includes('4826'))), 'the PIN is not in browser storage');
+  check(true, 'PIN set; the app opens');
 
   /* ---------- scan combinations ---------- */
   await nav('scan');
@@ -172,16 +197,44 @@ try {
   await waitFor(() => Picker.st && /PW picked$/.test(Picker.st.data.path));
   const target = await ev(() => Picker.st.data.path);   // created inside the folder the picker opened (the nearest existing one)
   await page.click('[data-a=pk-here]'); await page.waitForSelector('#ad-ok:not([disabled])'); await page.click('#ad-ok');
+  await page.waitForSelector('#pinbox:not([hidden]) #pin-x');
+  check(/move or copy these files/.test(await page.textContent('#pinbox')), 'the PIN is asked before the move');
+  expecting = 'wrong PIN on purpose';
+  await page.fill('#pin-x', '9999'); await page.click('#pin-ok');
+  await waitFor(() => /Wrong PIN/.test(document.querySelector('#pinbox #pin-msg').textContent));
+  check(await ev(() => document.querySelector('#pal2').classList.contains('is-shake')), 'a wrong PIN: the bear shakes its head and says so');
+  await page.waitForTimeout(300); expecting = null;
+  await page.fill('#pin-x', PIN); await page.click('#pin-ok');
   await waitFor(() => Stage.finished && !document.querySelector('#st-final').hidden, null, 30000);
   const moved = walk(target);
   check(moved.length === 1 && /concert/i.test(moved[0]), 'move: the selected file is in the new folder', JSON.stringify(moved));
-  await page.click('[data-a=st-undo]'); await page.click('[data-a=cf-yes]');
+  await page.click('[data-a=st-undo]'); await page.click('[data-a=cf-yes]'); await enterPin();
   await waitFor(() => S.view === 'history', null, 15000);
-  check(walk(target).length === 0, 'undo puts it back (the Undo confirmation is clickable above the move screen)');
+  check(walk(target).length === 0, 'undo (after the PIN) puts it back (the Undo confirmation is clickable above the move screen)');
+
+  /* ---------- "a file with this name already exists": Replace, then Undo ---------- */
+  const name = path.basename(moved[0]);
+  fs.writeFileSync(path.join(target, name), 'an older file with the same name');
+  await pick('concert');
+  await page.click('#selbar [data-a=act-move]'); await page.waitForSelector('[data-a=pk-here]');
+  await ev(t => Picker.go(t), target); await waitFor(t => Picker.st && Picker.st.data.path === t, target);
+  await page.click('[data-a=pk-here]'); await page.waitForSelector('#ad-ok:not([disabled])'); await page.click('#ad-ok');
+  await page.waitForSelector('[data-a=clash-ok]');
+  check(/1 file already exists in this folder/.test(await page.textContent('#modal')) && /Coming in/.test(await page.textContent('#modal')), 'the clash is shown side by side before anything moves');
+  await page.click('[data-a=clash-all][data-k=replace]'); await page.click('[data-a=clash-ok]'); await enterPin();
+  await waitFor(() => Stage.finished && !document.querySelector('#st-final').hidden, null, 30000);
+  check(fs.readFileSync(path.join(target, name)).length !== 'an older file with the same name'.length && /replaced/.test(await page.textContent('#st-final')), 'Replace: the new file is in place and the summary says one was replaced');
+  await page.click('[data-a=st-undo]'); await page.click('[data-a=cf-yes]'); await enterPin();
+  await waitFor(() => S.view === 'history', null, 15000);
+  check(fs.readFileSync(path.join(target, name), 'utf8') === 'an older file with the same name', 'Undo after Replace puts the older file back in its place');
+  fs.rmSync(path.join(target, name));   // the test's own file
 
   /* ---------- Recycle Bin (the test bin; the real Recycle Bin is never used) ---------- */
   await pick('setlist');
   await page.click('#selbar [data-a=act-trash]'); await page.waitForSelector('#ad-ok:not([disabled])'); await page.click('#ad-ok');
+  await page.waitForSelector('#pinbox:not([hidden]) #pin-no'); await page.click('#pin-no'); await page.waitForTimeout(400);
+  check(await page.isHidden('#pinbox') && (await ev(() => window.__errToasts.length)) === 0 && walk(HOME).some(f => f.endsWith('setlist.txt')), 'Cancel at the PIN prompt: nothing happens, no error');
+  await page.click('#selbar [data-a=act-trash]'); await page.waitForSelector('#ad-ok:not([disabled])'); await page.click('#ad-ok'); await enterPin();
   await page.waitForSelector('[data-a=bp-done]', { timeout: 15000 });
   check(walk(path.join(HOME, '..', 'test-bin')).some(f => f.endsWith('setlist.txt')), 'Recycle Bin: the file went to the bin, not deleted');
   await page.click('[data-a=bp-done]');
@@ -196,6 +249,20 @@ try {
   await page.click('#set-legal [data-a=legal][data-doc=privacy]'); await page.waitForSelector('.legal-doc h2');
   check(/Privacy Policy/.test(await page.textContent('.legal-doc')), 'Settings > Legal opens the Privacy Policy');
   await page.click('[data-a=legal-close]');
+  await page.click('[data-a=diag-run]'); await page.waitForSelector('#diag-out .diag-list', { timeout: 30000 });
+  check(/Test scan/.test(await page.textContent('#diag-out')) && await page.isEnabled('[data-a=diag-copy]'), 'Settings > Diagnostics runs the checks and offers Copy diagnostics');
+
+  /* ---------- lock and unlock ---------- */
+  await page.click('[data-a=pin-lock-now]'); await page.waitForSelector('#pin-u');
+  check(/Unlock AuraSort/.test(await page.textContent('#gate')), 'Lock now shows the unlock screen');
+  expecting = 'wrong PIN on purpose';
+  await page.fill('#pin-u', '0000'); await page.click('#pin-go');
+  await waitFor(() => /Wrong PIN/.test(document.querySelector('#pin-msg').textContent));
+  check(/tries left/.test(await page.textContent('#pin-msg')), 'a wrong PIN says how many tries are left');
+  expecting = null;
+  await page.fill('#pin-u', PIN); await page.click('#pin-go');
+  await waitFor(() => document.querySelector('#gate').hidden && S.view === 'settings', null, 15000);
+  check(true, 'the right PIN unlocks and returns to the same page');
   await page.screenshot({ path: path.join(OUT, 'pw-02-end.png') });
   await toasts();
 } catch (e) {

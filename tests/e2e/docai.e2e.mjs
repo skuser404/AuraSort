@@ -28,7 +28,7 @@ const click = sel => ev(`(() => { const e = document.querySelector(${J(sel)}); i
 const api = (p, b) => ev(`fetch('/api/${p}', { method: ${b ? "'POST'" : "'GET'"}, headers: { 'X-AuraSort-Token': TOKEN, 'Content-Type': 'application/json' }${b ? `, body: ${J(J(b))}` : ''} }).then(r => r.json())`);
 try {
   await T.goto(B + '/?view=insights'); await T.acceptTerms(); await T.waitFor('!!S.info && S.hasIndex', 15000, 'index');
-  await api('ai/reset', {});
+  await ev('API.aiReset()');   // guarded: the page asks for the PIN (answered like a person would)
   await click('[data-a=instab][data-k=documents]'); await T.waitFor(`!!document.querySelector('#ai-enable')`, 8000);
   check(await ev(`document.querySelector('#ai-enable').disabled`), 'off by default: the turn-on button needs the consent tick');
   check(await ev(`/only suggests/.test(document.querySelector('#ins').textContent) && /Nothing is read or sent/.test(document.querySelector('#ins').textContent)`), 'first-run screen explains what it reads and that it only suggests');
@@ -66,7 +66,7 @@ try {
   check(seen.every(s => /^(GET \/api\/tags|POST \/api\/chat)$/.test(s)), 'only the local engine was contacted', J([...new Set(seen)]));
   await click('[data-a=ai-clear]'); await sleep(800);
   check(await ev(`!document.querySelector('.ai-banner')`), 'Clear now removes every result');
-  await api('ai/reset', {});
+  await ev('API.aiReset()');   // guarded: the page asks for the PIN (answered like a person would)
 } catch (e) { check(false, 'test crashed', e.stack) }
 console.log('\nCONSOLE/LOG ERRORS:', T.errors.length ? '\n  ' + T.errors.join('\n  ') : 'none');
 if (T.errors.length) fails++;

@@ -41,8 +41,9 @@ class TrashResult:
 
 
 def bin_available(path):
-    """Why: on Windows, network and removable drives have no Recycle Bin, so deleting there would be permanent."""
-    if not WIN:
+    """Why: on Windows, network and removable drives have no Recycle Bin, so deleting there would be permanent.
+    Android has no trash at all: AuraSort's own trash folder is used there (always available)."""
+    if config.ANDROID or not WIN:
         return True
     return drive_type(drive_of(path)) in ("internal",)  # GetDriveTypeW DRIVE_FIXED (internal *and* external USB disks)
 
@@ -182,6 +183,24 @@ def send_to_trash(paths):
         fake = fake_bin_dir()
         if fake:
             _test_trash(ok_paths, res, fake)
+        elif config.ANDROID:
+            _app_trash(ok_paths, res)
         else:
             (_win_trash if WIN else _mac_trash if MAC else _linux_trash)(ok_paths, res)
     return res
+
+
+def _app_trash(paths, res):
+    """Why: Android has no Recycle Bin; files go to AuraSort's own trash on the same storage (restorable in Settings)."""
+    from . import apptrash
+    for p in paths:
+        try:
+            apptrash.put(p, "deleted")
+            res.trashed.append(p)
+        except OSError as ex:
+            res.fail(p, f"could not move it to the AuraSort trash ({type(ex).__name__})")
+
+
+def where_name():
+    """Why: the UI says where deleted files go on this system."""
+    return "the AuraSort trash" if config.ANDROID else "the Trash" if MAC or config.LINUX else "the Recycle Bin"

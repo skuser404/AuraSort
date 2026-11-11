@@ -87,7 +87,10 @@ class LiveNoNetworkTest(TempHomeCase):
                                            headers={config.TOKEN_HEADER: "t", "Host": f"127.0.0.1:{port}", "Content-Type": "application/json"})
                 with urllib.request.urlopen(r) as resp:
                     return json.loads(resp.read())
-            for path in ("info", "drives", "settings", "summary", "history?limit=5"):
+            from core import pin
+            pin.lock()
+            call("pin/set", {"pin": "4826"})   # the first-run PIN setup, through the API like the UI does it
+            for path in ("info", "drives", "settings", "summary", "history?limit=5", "pin/status"):
                 call(path)
             call("scan/start", {"mode": "deep", "roots": [str(self.home / "Downloads")]})
             for _ in range(200):
@@ -101,6 +104,8 @@ class LiveNoNetworkTest(TempHomeCase):
             srv.server_close()
         finally:
             socket.socket.connect = real_connect
+            from core import pin
+            pin.lock()
         self.assertEqual(attempts, [], "no outgoing connections")
 
 

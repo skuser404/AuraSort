@@ -1,4 +1,0 @@
-# Optional extras. AuraSort runs without them (standard library only).
-# Install: py -m pip install -r requirements-optional.txt   (macOS/Linux: python3 -m pip install -r requirements-optional.txt)
-Pillow==11.0.0   # faster, smaller image thumbnails
-pypdf==5.1.0     # reads more PDFs for Document Insights (a basic built-in reader is used otherwise)

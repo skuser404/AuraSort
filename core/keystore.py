@@ -95,11 +95,11 @@ def _keychain_read():
                 ctypes.windll.advapi32.CredFree(p)
         if config.MAC and shutil.which("security"):
             r = subprocess.run(["security", "find-generic-password", "-a", ACCOUNT, "-s", config.AI_KEYCHAIN_TARGET, "-w"],  # nosec B603 B607
-                               capture_output=True, text=True, timeout=TIMEOUT_S, check=False)
+                               capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=TIMEOUT_S, check=False)
             return r.stdout.strip() if r.returncode == 0 else ""
         tool = shutil.which("secret-tool")
         if tool:
-            r = subprocess.run([tool, "lookup", "service", config.AI_KEYCHAIN_TARGET, "account", ACCOUNT], capture_output=True, text=True, timeout=TIMEOUT_S, check=False)  # nosec B603
+            r = subprocess.run([tool, "lookup", "service", config.AI_KEYCHAIN_TARGET, "account", ACCOUNT], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=TIMEOUT_S, check=False)  # nosec B603
             return r.stdout.strip() if r.returncode == 0 else ""
     except (OSError, ValueError, subprocess.SubprocessError):
         return ""

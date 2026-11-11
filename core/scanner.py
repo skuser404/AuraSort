@@ -3,6 +3,7 @@
 Runs on a background job with a small worker pool per drive (os.scandir, DirEntry.stat reused, links/junctions
 skipped), live partial counters, pause/resume/cancel and a files/second ETA."""
 import collections
+import errno
 import os
 import queue
 import shutil
@@ -14,7 +15,8 @@ import time
 from . import classify, config, history, index_db, jobs, settings
 from .log import log
 from .schema import NOTHING_SELECTED, BadRequest
-from .platform_utils import created_time, drive_media, drive_of, is_hidden_system, is_reparse_or_link, quick_folders, within
+from .platform_utils import (created_time, drive_media, drive_of, is_hidden_system, is_online_only, is_reparse_or_link, long_path,
+                             quick_folders, within)
 from .safety import canonical, folder_kind, is_project, is_protected
 
 _IGNORED_NAMES = config.IGNORED_FILE_NAMES
@@ -51,6 +53,15 @@ def index_failure(ex, step):
         if frag in low:
             return ScanFailed(msg, code, hint, step)
     return ScanFailed("The file index could not be updated.", "index_error", f"Details are in the log file: {config.LOG_FILE_SHOWN}", step)
+
+
+def errno_name(ex):
+    """Why: 'EACCES'/'EPERM'/'WinError 5' tell antivirus or Controlled Folder Access apart from macOS privacy blocks."""
+    win = getattr(ex, "winerror", None)
+    if win:
+        return f"WinError {win}"
+    code = getattr(ex, "errno", None)
+    return errno.errorcode.get(code, str(code)) if code is not None else type(ex).__name__
 
 
 def storable(text):
@@ -104,14 +115,16 @@ def never_project():
 
 
 def _project_above(root, blocked):
-    """Why: a scan root inside a project (e.g. a website's assets folder) still belongs to that project."""
+    """Why: a scan root inside a project (e.g. a website's assets folder) still belongs to that project. Strict markers
+    only: one stray file above the root (a .gitignore in the user folder) must not lock every file below it."""
     p = os.path.dirname(root)
     for _ in range(PROJECT_LOOKUP_LEVELS):
         parent = os.path.dirname(p)
         if parent == p or os.path.normcase(p) in blocked:
             return None
         try:
-            if is_project(set(os.listdir(p))):
+            if is_project(set(os.listdir(long_path(p))), strict=True):
+                log.info("scan: a scan folder is inside a project folder (%s levels up); its files are left alone", root.count(os.sep) - p.count(os.sep))
                 return p
         except OSError:
             pass
@@ -126,8 +139,9 @@ def _project_above(root, blocked):
 class _Walk:
     """Why: shared state of one scan: skip rules, counters (lock-protected) and the queue to the DB writer."""
 
-    def __init__(self, job, skip, dest_roots):
+    def __init__(self, job, skip, dest_roots, roots=()):
         self.job, self.skip, self.dest_roots = job, [os.path.normcase(s) for s in skip], [os.path.normcase(d) for d in dest_roots]
+        self.roots = {os.path.normcase(r) for r in roots}
         self.lock, self.sink = threading.Lock(), queue.Queue()
         self.queues, self.never_project = [], never_project()
         self.fatal = None          # set by the writer when the index cannot be written: every worker stops
@@ -135,15 +149,23 @@ class _Walk:
     def stopping(self):
         return self.job._cancel or self.fatal is not None
 
-    def skip_item(self, reason, n=1):
-        """Why: nothing is dropped silently: every skipped folder or file is counted with its reason."""
+    def skip_item(self, reason, n=1, ex=None):
+        """Why: nothing is dropped silently: every skipped folder or file is counted with its reason (and OS error code,
+        which tells 'Windows/antivirus blocked it' from 'macOS privacy blocked it')."""
         with self.lock:
-            sk = self.job.extra["skipped"]
+            ext = self.job.extra
+            sk = ext["skipped"]
             sk[reason] = sk.get(reason, 0) + n
             if reason == "no_access":
-                self.job.extra["noaccess"] += n
+                ext["noaccess"] += n
             elif reason in ("unreadable", "vanished"):
-                self.job.extra["unreadable"] += n
+                ext["unreadable"] += n
+            if ex is not None:
+                code = errno_name(ex)
+                ext["errors_by_code"][code] = ext["errors_by_code"].get(code, 0) + n
+                first = sk[reason] == n
+        if ex is not None and first:   # the first of each kind goes to the log (paths are masked there)
+            log.warning("scan: first '%s' skip: %s (%s)", reason, type(ex).__name__, errno_name(ex))
 
     @staticmethod
     def reason_for(ex):
@@ -164,10 +186,13 @@ class _Walk:
             return "sorted"
         return folder_kind(path, 0 if project else -1)
 
-    def count(self, path, files, nbytes, by_cat, drive):
+    def count(self, path, files, nbytes, by_cat, drive, notes=None):
         """Why: counters are updated once per folder (not per file) to keep lock traffic low."""
         ex = self.job.extra
         with self.lock:
+            for k, n in (notes or {}).items():
+                if n:
+                    ex["notes"][k] = ex["notes"].get(k, 0) + n
             ex["found"] += len(files)
             ex["bytes"] += nbytes
             ex["dirs"] += 1
@@ -191,46 +216,67 @@ class _Walk:
             self.skip_item("bad_name")
             return
         try:
-            entries = list(os.scandir(d))
+            with os.scandir(long_path(d)) as it:   # \\?\ for long Windows paths; the stored path stays the normal one
+                entries = list(it)
         except OSError as ex:              # no permission, folder removed mid-scan, drive unplugged...
-            self.skip_item(self.reason_for(ex))
+            self.skip_item(self.reason_for(ex), ex=ex)
             return
-        if project is None and os.path.dirname(d) != d and os.path.normcase(d) not in self.never_project                 and is_project({e.name for e in entries}):
+        nd = os.path.normcase(d)
+        if project is None and os.path.dirname(d) != d and nd not in self.never_project \
+                and is_project({e.name for e in entries}, strict=nd in self.roots):
             project = d
         files, nsub, nbytes, by_cat = [], 0, 0, collections.Counter()
+        notes = collections.Counter()
         for e in entries:
             if not storable(e.name):
                 self.skip_item("bad_name")
                 continue
+            path = os.path.join(d, e.name)
             try:
                 st = e.stat(follow_symlinks=False)
                 if is_reparse_or_link(st):
+                    self.skip_item("link")
                     continue
                 name = e.name
                 if stat.S_ISDIR(st.st_mode):
                     nsub += 1
                     if name.lower().endswith(config.MAC_BUNDLE_EXTS):
-                        files.append(self.bundle_row(e.path, name, st))
+                        files.append(self.bundle_row(path, name, st))
                         nbytes += files[-1][4]
                         by_cat[files[-1][2]] += 1
-                    elif not (name.startswith(".") or is_hidden_system(st) or is_protected(e.path) or self.skipped(e.path)):
-                        q.put((e.path, project))
+                    elif name.startswith(".") or is_hidden_system(st):
+                        self.skip_item("hidden")
+                    elif is_protected(path):
+                        self.skip_item("protected")
+                    elif self.skipped(path):
+                        self.skip_item("skip_list")
+                    else:
+                        q.put((path, project))
                 elif stat.S_ISREG(st.st_mode):
                     low = name.lower()
                     if low in _IGNORED_NAMES or low.startswith(_IGNORED_PREFIXES):
+                        self.skip_item("system_file")
                         continue
                     ext, cat, sub = classify.classify(name)
-                    flags = index_db.FLAG_PARTIAL if ext in config.PARTIAL_DOWNLOAD_EXTS else 0
-                    if getattr(st, "st_file_attributes", 0) & config.CLOUD_ATTRS or getattr(st, "st_flags", 0) & config.MAC_DATALESS:
+                    flags = 0
+                    if ext in config.PARTIAL_DOWNLOAD_EXTS:
+                        flags |= index_db.FLAG_PARTIAL
+                        notes["partial"] += 1
+                    if is_online_only(st):
                         flags |= index_db.FLAG_CLOUD   # listed from metadata only; reading it would make OneDrive/iCloud download it
+                        notes["online_only"] += 1
+                    if cat == classify.OTHER:
+                        notes["other_ext"] += 1
                     files.append((name, ext, cat, sub, st.st_size, st.st_mtime, created_time(st), st.st_atime, flags))
                     nbytes += st.st_size
                     by_cat[cat] += 1
             except OSError as ex:          # the file vanished or is locked between listing and stat
-                self.skip_item(self.reason_for(ex))
+                self.skip_item(self.reason_for(ex), ex=ex)
                 continue
+        if project is not None:
+            notes["project"] += len(files)
         self.sink.put((d, project, self.kind_for(d, project), drive, dev, nsub, files))
-        self.count(d, files, nbytes, by_cat, drive)
+        self.count(d, files, nbytes, by_cat, drive, notes)
 
     @staticmethod
     def bundle_row(path, name, st):
@@ -240,8 +286,8 @@ class _Walk:
             for f in fs:
                 try:
                     total += os.lstat(os.path.join(root, f)).st_size
-                except OSError:
-                    pass
+                except OSError:   # one unreadable item inside an app bundle: the bundle's size is then a lower bound
+                    continue
         ext, cat, sub = classify.classify(name)
         return (name, ext, cat, sub, total, st.st_mtime, created_time(st), st.st_atime, index_db.FLAG_BUNDLE)
 
@@ -349,7 +395,7 @@ def _run(job, roots, skip):
 def _scan(job, roots, skip, scan_id):
     """Why: the walk itself (see _run for the bookkeeping around it)."""
     ex = job.extra
-    walk = _Walk(job, skip, settings.load()["dest_roots"])
+    walk = _Walk(job, skip, settings.load()["dest_roots"], roots)
     groups = collections.defaultdict(list)
     for r in roots:
         groups[drive_of(r)].append(r)
@@ -438,7 +484,7 @@ def start(mode, roots, skip, est_files=0):
     roots = clean_roots(quick_roots() if mode == "quick" and not roots else roots, skipped)
     skip = [canonical(s) for s in skip]
     job = jobs.Job("scan", total=int(est_files or 0), mode=mode, roots=roots, found=0, bytes=0, dirs=0, queued=0, noaccess=0,
-                   unreadable=0, by_cat={}, recent=[], drive_stats={}, skipped=skipped, step="starting")
+                   unreadable=0, by_cat={}, recent=[], drive_stats={}, skipped=skipped, notes={}, errors_by_code={}, step="starting")
     CURRENT["job"] = job
     return jobs.start(job, _run, roots, skip)
 
@@ -455,15 +501,16 @@ def estimate(roots, seconds=config.ESTIMATE_BENCH_SECONDS):
             break
         d = stack.pop()
         try:
-            with os.scandir(d) as it:
+            with os.scandir(long_path(d)) as it:
                 for e in it:
                     try:
                         st = e.stat(follow_symlinks=False)
                         if is_reparse_or_link(st):
                             continue
                         if stat.S_ISDIR(st.st_mode):
-                            if not (e.name.startswith(".") or is_protected(e.path)):
-                                stack.append(e.path)
+                            path = os.path.join(d, e.name)
+                            if not (e.name.startswith(".") or is_protected(path)):
+                                stack.append(path)
                         elif stat.S_ISREG(st.st_mode):
                             files += 1
                             nbytes += st.st_size
@@ -495,6 +542,59 @@ def _used(root):
         return 0
 
 
+def _blocked_hint():
+    """Why: 'no permission' has a different fix on each OS; say the one that applies here."""
+    if config.MAC:
+        return ("mac_privacy", "macOS blocked access to these folders",
+                "Open System Settings > Privacy & Security > Full Disk Access (or Files and Folders), allow Terminal (or the Python "
+                "you started AuraSort with), quit and reopen it, then scan again.")
+    if config.WIN:
+        return ("windows_blocked", "Windows blocked access to these folders",
+                "Check Windows Security > Virus & threat protection > Manage ransomware protection (Controlled Folder Access) and "
+                "your antivirus: allow Python (python.exe / py.exe), then scan again. AuraSort does not need administrator rights.")
+    if config.ANDROID:
+        return ("android_storage", "Android did not allow access to your files",
+                "Run termux-setup-storage in Termux, allow 'Files and media', then start AuraSort again.")
+    return ("no_permission", "You do not have permission to read these folders",
+            "Scan folders your user owns, or check the folder permissions (ls -ld <folder>).")
+
+
+def explain(s):
+    """Why: a scan that finds nothing, or nothing that can be sorted, says why and what to do: never just zeros."""
+    sk, notes, found = s.get("skipped") or {}, s.get("notes") or {}, s.get("found", 0)
+    out = []
+    add = lambda code, title, body: out.append(dict(code=code, title=title, body=body))
+    if not found:
+        if sk.get("no_access"):
+            add(*_blocked_hint())
+        if sk.get("link"):
+            add("links_only", "These folders hold links or junctions, not files",
+                "AuraSort does not follow links (they can loop or point outside the folder). Add the real folder they point to.")
+        if sk.get("protected"):
+            add("protected_only", "Everything here is inside protected system or tool folders",
+                "Folders such as AppData, node_modules or Program Files are never scanned. Pick a folder with your own files.")
+        if sk.get("missing_root"):
+            add("missing", "A folder to scan was not found", "It was moved, renamed, or its drive is unplugged. Add it again on the Scan page.")
+        if sk.get("bad_name") or sk.get("unreadable") or sk.get("error"):
+            add("unreadable", "Some folders could not be read", f"Details are in the log file: {config.LOG_FILE_SHOWN}. Run 'py server.py --doctor' for a full check.")
+        if not out:
+            moved = [q for q in quick_folders() if q["exists"] and q.get("onedrive")]
+            body = "The folders were read, but they contain no files."
+            if s.get("mode") == "quick" and moved:
+                body += " Your " + ", ".join(q["name"] for q in moved) + " are in OneDrive: open Settings > Diagnostics to see exactly which folders Quick Scan used."
+            add("empty", "No files were found", body + " If this is wrong, run 'py server.py --doctor' and send the result.")
+    else:
+        if notes.get("project", 0) >= found:
+            add("all_project", "Every file was treated as part of a project folder",
+                "A project marker (such as package.json, .git or a .sln file) was found in or above the scanned folders, so nothing is "
+                "offered for sorting. Storage > Folders shows the folders and lets you include them.")
+        if notes.get("online_only", 0) * 2 >= found:
+            add("online_only", "Most files are online-only (OneDrive or iCloud)",
+                "They are listed with their full size but take no space on this PC. AuraSort never downloads them; previews, checks and "
+                "copies need them available offline first.")
+    return out
+
+
 def status():
     """Why: the scan screen polls this for live partial counts (files, folders, size, per-category, per-drive)."""
     job = CURRENT["job"]
@@ -511,7 +611,9 @@ def status():
     sk = snap.get("skipped") or {}
     snap["skipped_total"] = sum(sk.values())
     snap["skipped_reasons"] = [dict(code=k, label=config.SCAN_SKIP_REASONS.get(k, k), n=v) for k, v in sorted(sk.items(), key=lambda kv: -kv[1])]
+    snap["notes_list"] = [dict(code=k, label=config.SCAN_NOTES.get(k, k), n=v) for k, v in sorted((snap.get("notes") or {}).items(), key=lambda kv: -kv[1])]
     if snap["state"] == "done":
+        snap["explain"] = explain(snap)
         snap["pct"] = 100.0
     elif job.total:
         snap["pct"] = min(99.0, snap["pct"])

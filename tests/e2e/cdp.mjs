@@ -4,6 +4,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 export const sleep = ms => new Promise(r => setTimeout(r, ms));
+export const E2E_PIN = '4826';   // the PIN every browser suite sets on a fresh fixture (not a weak one, so no warning)
 
 export async function launch({ port = 9333, profile, width = 1440, height = 900 }) {
   mkdirSync(profile, { recursive: true });
@@ -36,6 +37,13 @@ export async function launch({ port = 9333, profile, width = 1440, height = 900 
   await send('Runtime.enable'); await send('Log.enable'); await send('Page.enable'); await send('Inspector.enable');
   await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false });
   await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
+  // Every per-action PIN prompt (#pinbox) is answered like a person would: type the PIN, press Confirm.
+  await send('Page.addScriptToEvaluateOnNewDocument', { source: `(() => {
+    const PIN = ${JSON.stringify(E2E_PIN)};
+    new MutationObserver(() => { const i = document.querySelector('#pinbox:not([hidden]) #pin-x'), ok = document.querySelector('#pin-ok');
+      if (i && ok && !i.dataset.e2e && !window.__e2eNoAutoPin) { i.dataset.e2e = 1; i.value = PIN; i.dispatchEvent(new Event('input')); setTimeout(() => ok.click(), 60) } })
+      .observe(document, { childList: true, subtree: true });
+  })()` });
   const api = {
     send, errors, dialogs, proc,
     async eval(expr, awaitPromise = true) {
@@ -52,6 +60,21 @@ export async function launch({ port = 9333, profile, width = 1440, height = 900 
       if (await api.eval(`!!document.querySelector('#gate') && !document.querySelector('#gate').hidden`)) {
         await api.eval(`(() => { const c = document.querySelector('#gate-ok'); c.checked = true; c.dispatchEvent(new Event('change')); document.querySelector('#gate-go').click(); return true })()`);
         await sleep(300);
+      }
+      await api.passPin();
+    },
+    async passPin() { // "This computer" -> "Set your PIN" on first run, or the unlock screen: through the real UI
+      for (let i = 0; i < 4; i++) {
+        await api.waitFor(`!!document.querySelector('#pin-next, #pin-a, #pin-u') || (typeof S !== 'undefined' && !!S.info)`, 15000, 'PIN screen or app');
+        const step = await api.eval(`document.querySelector('#pin-next') ? 'device' : document.querySelector('#pin-a') ? 'set' : document.querySelector('#pin-u') ? 'unlock' : ''`);
+        if (!step) return;
+        const type = (sel) => `(() => { const e = document.querySelector('${sel}'); e.value = ${JSON.stringify(E2E_PIN)}; e.dispatchEvent(new Event('input')); return true })()`;
+        if (step === 'device') await api.eval(`document.querySelector('#pin-next').click()`);
+        if (step === 'set') { await api.eval(type('#pin-a')); await api.eval(type('#pin-b')); await api.eval(`document.querySelector('#pin-start').click()`) }
+        if (step === 'unlock') { await api.eval(type('#pin-u')); await api.eval(`document.querySelector('#pin-go').click()`) }
+        const sel = { device: '#pin-next', set: '#pin-a', unlock: '#pin-u' }[step];   // one submit per screen: wait until it is gone
+        await api.waitFor(`!document.querySelector('${sel}')`, 10000, step + ' screen closes');
+        await sleep(200);
       }
     },
     async size(width, height, mobile = false) { await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile }) },

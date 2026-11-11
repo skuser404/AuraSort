@@ -9,9 +9,9 @@ function pickDrive() { // Why: the gauge shows the drive the last scan covered (
 }
 function insightsFor(s) { // Why: rule-based observations from real numbers (no AI involved)
   const out = [], top = Object.entries(s.by_cat).sort((a, b) => b[1].size - a[1].size)[0], d = pickDrive();
-  if (top && top[1].size) out.push({ icon: CAT[top[0]].ic, title: `${top[0]} take up ${pctTxt(pct(top[1].size, s.total_size))} of the scanned space`, body: `${fmt(top[1].n)} files, ${sz(top[1].size)}`, act: `data-a="nav-type" data-k="${esc(top[0])}"` });
+  if (top && top[1].size) out.push({ icon: CAT[top[0]].ic, title: `${top[0]} take up ${pctTxt(share(top[1].size, s.total_size))} of the scanned space`, body: `${fmt(top[1].n)} files, ${sz(top[1].size)}`, act: `data-a="nav-type" data-k="${esc(top[0])}"` });
   if (s.ready) out.push({ icon: 'moveto', title: `${fmt(s.ready)} files (${sz(s.ready_size)}) can be sorted`, body: 'You see exactly where each one goes before anything moves.', act: 'data-a="nav" data-v="move"' });
-  if (d && d.used / d.total > .85) out.push({ icon: 'alert', title: `${driveName(d.root)} is ${pctTxt(pct(d.used, d.total))} full`, body: `${sz(d.free)} free on ${driveName(d.root)}. Large files are the quickest place to look.`, act: 'data-a="nav" data-v="large"' });
+  if (d && d.used / d.total > .85) out.push({ icon: 'alert', title: `${driveName(d.root)} is ${pctTxt(share(d.used, d.total))} full`, body: `${sz(d.free)} free on ${driveName(d.root)}. Large files are the quickest place to look.`, act: 'data-a="nav" data-v="large"' });
   const big = s.biggest_files && s.biggest_files[0];
   if (big) out.push({ icon: 'large', title: `Your biggest file is ${sz(big.size)}`, body: big.name, act: 'data-a="nav" data-v="large"' });
   if (s.projects && s.projects.length) out.push({ icon: 'shield', title: `${fmt(s.projects.length)} project folders are protected`, body: `${fmt(s.projects.reduce((a, p) => a + p.n, 0))} files stay where they are unless you choose otherwise.`, act: 'data-a="nav" data-v="folders"' });
@@ -36,11 +36,13 @@ function welcome(v) { // Why: first run: what the app does and one clear next st
 
 function viewDashboard(v) {
   if (!S.hasIndex) return welcome(v);
-  const s = S.summary, d = pickDrive(), up = d ? d.used / d.total : 0, ready = S.drives.filter(x => x.ready && x.total);
-  const segs = CATS.map(c => ({ c, x: s.by_cat[c.key] || { n: 0, size: 0 } })), tot = s.total_size || 1;
+  const s = S.summary, d = pickDrive(), up = d ? (share(d.used, d.total) ?? 0) / 100 : 0, ready = S.drives.filter(x => x.ready && x.total);
+  const segs = CATS.map(c => ({ c, x: s.by_cat[c.key] || { n: 0, size: 0 } })), tot = s.total_size;
   const bf = s.biggest_folders || [], mxF = bf[0] ? bf[0].size : 1, bfi = s.biggest_files || [], mxB = bfi[0] ? bfi[0].size : 1;
   const name = S.info && S.info.user ? S.info.user.split(/[\s.]+/)[0] : '', types = Object.values(s.by_cat).filter(x => x.n).length;
   v.innerHTML = `<div class="stack">
+  ${s.consistent === false ? `<div class="note data-warn" role="status">${ic('alert')}<div><b>Some numbers do not add up.</b> The file index changed while it was being read, or it needs rebuilding. <button class="btn sm" data-a="nav" data-v="scan">${ic('refresh')} Refresh data (scan again)</button></div></div>` : ''}
+  ${S.scanResult && S.scanResult.found ? S.scanResult.explain.map(x => `<div class="note explain">${ic('info')}<div><h3>${esc(x.title)}</h3><p>${esc(x.body)}</p></div></div>`).join('') : ''}
   <section class="card hero">
     <div><p class="greet">${greeting()}${name ? ', ' + esc(name) : ''}</p><h1>Dashboard</h1>
       <p class="lead">${s.scan ? `Last ${s.scan.mode === 'deep' ? 'Deep' : 'Quick'} Scan ${ago(s.scan.finished)}` : ''}</p>
@@ -60,8 +62,8 @@ function viewDashboard(v) {
     </dl>
   </section>
   <section class="card"><div class="card-h"><h2>Space by file type</h2><small>${sz(s.total_size)} in ${fmt(s.total)} files. Select a type to open it.</small></div>
-    <div class="segbar">${segs.filter(x => x.x.size).map(x => `<button class="sg" data-css="--c:${x.c.c};flex-grow:${(x.x.size / tot).toFixed(5)}" data-a="nav-type" data-k="${esc(x.c.key)}" data-tip="${esc(x.c.key)}" aria-label="${esc(x.c.key)}: ${sz(x.x.size)}, ${fmt(x.x.n)} files"></button>`).join('')}</div>
-    <div class="type-tiles">${segs.map(x => `<button class="ttile ${x.x.n ? '' : 'zero'}" data-css="--c:${x.c.c}" data-a="nav-type" data-k="${esc(x.c.key)}" data-tip="${esc(x.c.key)}"><span class="t-ic">${ic(x.c.ic)}</span><span><b>${esc(x.c.key)}</b><small class="num">${sz(x.x.size)} · ${fmt(x.x.n)} files</small></span><span class="pct num">${pctTxt(pct(x.x.size, tot))}</span></button>`).join('')}</div>
+    <div class="segbar">${segs.filter(x => x.x.size).map(x => `<button class="sg" data-css="--c:${x.c.c};flex-grow:${(pct(x.x.size, tot) / 100).toFixed(5)}" data-a="nav-type" data-k="${esc(x.c.key)}" data-tip="${esc(x.c.key)}" aria-label="${esc(x.c.key)}: ${sz(x.x.size)}, ${fmt(x.x.n)} files"></button>`).join('')}</div>
+    <div class="type-tiles">${segs.map(x => `<button class="ttile ${x.x.n ? '' : 'zero'}" data-css="--c:${x.c.c}" data-a="nav-type" data-k="${esc(x.c.key)}" data-tip="${esc(x.c.key)}"><span class="t-ic">${ic(x.c.ic)}</span><span><b>${esc(x.c.key)}</b><small class="num">${sz(x.x.size)} · ${fmt(x.x.n)} files</small></span><span class="pct num">${pctTxt(share(x.x.size, tot))}</span></button>`).join('')}</div>
   </section>
   <section class="card"><div class="card-h"><h2>Quick actions</h2><small>Each one opens a list to review first. Nothing happens without your OK.</small></div>
     <div class="qa-row">${[['cleanup', 'Clean junk files', 'Unfinished downloads, temp files, old installers'], ['duplicates', 'Find duplicates', 'Identical copies, newest kept'], ['large', 'Free up space', 'Biggest files first'], ['corrupted', 'Check for damaged files', 'Read-only check']]

@@ -7,7 +7,7 @@ import time
 
 from . import config
 from .log import log
-from .platform_utils import make_private
+from .platform_utils import make_private, replace_file
 
 KINDS = ("move", "copy", "trash", "quarantine", "scan", "integrity", "duplicates")
 UNDOABLE = ("move", "quarantine")
@@ -67,7 +67,7 @@ def save(m):
         ensure_dirs()                  # the data folder was removed while the app ran (e.g. by a cleaner tool)
     tmp = p.with_suffix(".tmp")
     tmp.write_text(json.dumps(m), encoding="utf-8")
-    os.replace(tmp, p)
+    replace_file(tmp, p)
     if not config.WIN:
         make_private(p, is_dir=False)
 

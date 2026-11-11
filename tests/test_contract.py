@@ -29,6 +29,9 @@ box.window = box; box.self = box;
 vm.createContext(box);
 const src = fs.readFileSync(process.argv[1] + '/api.js', 'utf8');
 vm.runInContext(src + '\n;this.__RealApi = RealApi; this.__qs = typeof qs === "function" ? qs : null;', box);
+// the real guarded() wrapper from pin.js (move, copy, delete... get a PIN token); the PIN prompt itself answers "tok" here
+const pinSrc = fs.readFileSync(process.argv[1] + '/pin.js', 'utf8');
+vm.runInContext('var Pin = { confirm: async () => "tok", onLocked() {} };\n' + pinSrc.match(/async function guarded\([\s\S]*?\n\}/)[0] + '\n;this.guarded = guarded;', box);
 const BODY = { __page_body__: 1 };   // marker: this method forwards a body that the page builds
 (async () => {
   const api = box.__RealApi, out = {};

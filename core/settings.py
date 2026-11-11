@@ -4,13 +4,17 @@ import os
 import threading
 
 from . import classify, config
-from .platform_utils import make_private
+from .platform_utils import make_private, replace_file
 
 AI_DEFAULTS = dict(consent_local=0, consent_cloud=0, engine="ollama", local_url="", model="", ttl_min=config.AI_TTL_DEFAULT_MIN, parallel=1,
                    ctx=config.AI_CONTEXT_DEFAULT, pages=config.AI_MAX_PAGES, cpu_friendly=False, provider="deepseek",
                    cloud_url=config.AI_CLOUD_PRESETS["deepseek"]["base_url"], cloud_model=config.AI_CLOUD_PRESETS["deepseek"]["model"])
-DEFAULTS = dict(roots=[], skip=[], dest="", dest_roots=[], optin=[], mode="quick", drives=[], ai=AI_DEFAULTS)
-_LOCK = threading.Lock()
+DEFAULTS = dict(roots=[], skip=[], dest="", dest_roots=[], optin=[], mode="quick", drives=[], ai=AI_DEFAULTS,
+                pin_idle_min=config.PIN_IDLE_MIN_DEFAULT, pin_remember_min=0, apptrash_purge_days=0)
+# Changed only through POST /api/pin/settings, which needs the PIN (they weaken or remove a protection).
+SECURITY_KEYS = ("pin_idle_min", "pin_remember_min", "apptrash_purge_days")
+_LOCK = threading.RLock()   # reads and writes of settings.json never overlap (Windows cannot replace an open file)
+_CACHE = {}         # settings file -> ((mtime_ns, size), parsed): every request reads settings (the PIN idle time), not the disk
 MAX_LIST = 200
 
 
@@ -30,14 +34,36 @@ def _clean_ai(value):
     return out
 
 
-def load():
-    """Why: missing or broken settings fall back to defaults instead of breaking start-up."""
+def _read():
+    """Why: re-read the file only when it changed on disk (fewer opens also means fewer clashes with a save on Windows)."""
+    path = str(config.SETTINGS_FILE)
+    with _LOCK:
+        return _read_locked(path)
+
+
+def _read_locked(path):
+    try:
+        st = os.stat(path)
+        key = (st.st_mtime_ns, st.st_size)
+    except OSError:
+        return {}
+    hit = _CACHE.get(path)
+    if hit and hit[0] == key:
+        return dict(hit[1])
     try:
         data = json.loads(config.SETTINGS_FILE.read_text(encoding="utf-8"))
         if not isinstance(data, dict):
             raise ValueError
     except (OSError, ValueError):
         data = {}
+    _CACHE.clear()
+    _CACHE[path] = (key, data)
+    return dict(data)
+
+
+def load():
+    """Why: missing or broken settings fall back to defaults instead of breaking start-up."""
+    data = _read()
     out = dict(DEFAULTS)
     for k, v in data.items():
         if k not in DEFAULTS:
@@ -64,6 +90,12 @@ def _clean(key, value):
         return str(value) if len(str(value)) <= config.MAX_PATH_CHARS else ""
     if key == "ai":
         return _clean_ai(value)
+    if key == "pin_idle_min":
+        return int(value) if isinstance(value, int) and not isinstance(value, bool) and value in config.PIN_IDLE_CHOICES_MIN else config.PIN_IDLE_MIN_DEFAULT
+    if key == "pin_remember_min":
+        return int(value) if isinstance(value, int) and not isinstance(value, bool) and value in config.PIN_REMEMBER_CHOICES_MIN else 0
+    if key == "apptrash_purge_days":
+        return int(value) if isinstance(value, int) and not isinstance(value, bool) and value in config.APPTRASH_PURGE_CHOICES_DAYS else 0
     raise ValueError("Unknown setting.")
 
 
@@ -76,7 +108,8 @@ def update(**changes):
         config.DATA_DIR.mkdir(parents=True, exist_ok=True)
         tmp = config.SETTINGS_FILE.with_suffix(".tmp")
         tmp.write_text(json.dumps(data, indent=1), encoding="utf-8")
-        os.replace(tmp, config.SETTINGS_FILE)
+        replace_file(tmp, config.SETTINGS_FILE)
+        _CACHE.clear()
         if not config.WIN:
             make_private(config.SETTINGS_FILE, is_dir=False)
         return data

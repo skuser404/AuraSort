@@ -2,9 +2,36 @@
 
 All notable changes to AuraSort. Dates are YYYY-MM-DD.
 
-## [Unreleased]
+## [1.1.0] - 2026-11-11
 
 ### Fixed
+- **Scans that "complete in a second with 0 files" on some PCs.** Every Windows reparse point was skipped as if it were a
+  link, without being counted. OneDrive Files On-Demand marks every placeholder file and folder that way, so on a PC
+  with Desktop/Documents/Pictures in OneDrive those folders scanned as (nearly) empty. Only symlinks and junctions are
+  skipped now (and counted); OneDrive placeholders are listed, online-only ones from metadata only (never downloaded).
+  This is the most likely cause of the reported case; it could not be reproduced on the test PC, whose OneDrive files
+  are local. `py server.py --doctor` checks for it (and for everything below) on any PC.
+- Quick Scan ignored Downloads/Documents/... moved outside the user folder (for example to `D:\`) and scanned an empty
+  `~\Downloads` instead. The Windows Known Folder locations are used for the signed-in user; Linux reads XDG user dirs.
+- "% of disk" reached 197% or 172%: online-only files counted with their full size against the disk. They are left out of
+  disk shares now, and every percentage is clamped to 0-100 ("n/a" when there is nothing to divide by).
+- Category badges and lists could disagree (rows without a folder). Such rows are removed after every scan, and a
+  consistency check logs an error and shows "refresh data" instead of wrong numbers.
+- A home folder inside a protected tree (`/root` on Linux) or named like a tool folder (a user called "venv") was never
+  scanned. One stray `requirements.txt`, `.gitignore` or `.blend` file no longer turns a whole scan root into a project.
+- Folders deeper than 260 characters on Windows are read with the `\\?\` prefix instead of being skipped.
+- Installing on Python 3.14 failed: `Pillow==11.0.0` has no wheels for it (pip tried to compile it). `requirements.txt`
+  now pins Pillow 12.3.0 and pypdf 6.9.2, with wheels for Python 3.10 to 3.14 on Windows, macOS and Linux.
+- The one-line install commands returned 404: they pointed at `.../v1.0.0/scripts/install.ps1`, a tag that was never
+  pushed. The installers are now release assets with stable names under `releases/latest/download/`.
+- macOS installs failed with the system `python3` (often 3.9, or a stub that asks for the Command Line Tools) and with
+  Homebrew's "externally-managed-environment" pip error. The installer finds Homebrew/python.org Pythons first and
+  installs packages into a private virtual environment.
+- Saving settings could fail with "Something went wrong" (WinError 5) when another request was reading them at the same
+  moment: Windows cannot replace an open file. Reads and writes of settings, the PIN file, AuraSort's trash list and
+  History manifests are serialised, a brief outside hold (antivirus) is waited out, and settings are cached in memory.
+- The console could crash on non-English names in cp1252/cp437 terminals (it now replaces what it cannot show), and
+  subprocess output is decoded as UTF-8.
 - **"The scan stopped: Unexpected error (KeyError)."** The scan's database-writer thread could die without telling
   anyone, and the scan then read a result the thread never set (`result["w"]` in `core/scanner.py`), so all you saw
   was `KeyError`. Two real causes made the writer die:
@@ -47,6 +74,31 @@ All notable changes to AuraSort. Dates are YYYY-MM-DD.
 - Drive probing errors other than a timeout are now logged with their traceback instead of being swallowed.
 
 ### Added
+- `py server.py --doctor` and **Settings > Diagnostics** ("Copy diagnostics"): Python and bitness, encoding, admin rights,
+  data folder, SQLite (WAL), the index schema, drives, exactly which folders Quick Scan uses (OneDrive, readable), and a
+  3-second test scan with every reason something was skipped. No file names; home shown as `~`, user name as `<user>`.
+- Every skipped item is counted with its reason (links, hidden, protected, system files, your skip list, no permission
+  with the OS error code...), and a scan that finds nothing, or nothing to sort, shows a plain explanation and what to do
+  (Controlled Folder Access/antivirus on Windows, Full Disk Access on macOS, OneDrive online-only files, project folders).
+- **PIN lock**, enforced by the server: "This computer" + "Set your PIN" on first run, the unlock screen, the PIN before
+  every move, copy, delete, undo, replace, data wipe and API-key change (single-use 60-second tokens bound to the exact
+  request), idle lock (10 minutes), scrypt-hashed storage, a lockout that survives restarts, Forgot PIN (type RESET).
+  An original animated bear covers its eyes while you type, peeks when the PIN is shown, and shakes its head on a mistake.
+- **"A file with this name already exists"**: before any move or copy, the clashes are shown side by side (size, date,
+  identical content) with Skip / Keep both / Replace per file or for all; "Skip identical files" is the default. Replace
+  sets the existing file aside in AuraSort's own trash on the same drive, and Undo restores it.
+- AuraSort's own trash (`.AuraSortTrash`) with Restore in Settings, and an optional purge timer (off by default).
+- New installers (`install.ps1` for PowerShell 5.1 and 7, `install.sh` for macOS Apple Silicon/Intel and Linux): Python
+  check (and winget/Homebrew with your consent), SHA-256 check, `%LOCALAPPDATA%\AuraSort`, Start Menu and Desktop
+  shortcuts, optional packages, self-test, safe re-run for updates, `-WhatIf` / `--dry-run`, elevation warning.
+- Android (Termux, experimental): `install-termux.sh`, `start-termux.sh`, the phone's storage as Quick Scan folders and
+  drives, deletes into AuraSort's trash. The phone-optimized layout comes later.
+- Index schema versioning (`PRAGMA user_version`): an older index is migrated, a newer or broken one rebuilt.
+- A public website (`site/`, GitHub Pages) with a description, Open Graph and JSON-LD tags, a social preview image,
+  `sitemap.xml` and `robots.txt`; the demo moved to `/demo/`.
+- CI on Windows, macOS and Linux with Python 3.10, 3.12, 3.13 and 3.14: unit tests, an install + smoke test in a clean
+  home (more than 0 files required), the README's install commands, a check that every README link answers 200,
+  browser tests (PIN, conflicts, undo), bandit. `docs/MANUAL_TESTS.md` for clean machines.
 - One request contract (`core/schema.py`, documented in `docs/ARCHITECTURE.md`): every POST route's fields, defaults,
   types, and readable 400 errors. API errors are always `{error, code, hint}`.
 - Failed jobs carry `failure: {code, message, hint, type, step}`; the UI shows a short message, "Try again", and
@@ -61,6 +113,11 @@ All notable changes to AuraSort. Dates are YYYY-MM-DD.
   error, failed request or error toast).
 
 ### Changed
+- The README says plainly that no administrator rights are needed (and why "Run as administrator" causes the System32
+  errors), lists the install steps in order for every OS, and has a troubleshooting table built from the real errors.
+- Windows installs go to `%LOCALAPPDATA%\AuraSort` (was `%LOCALAPPDATA%\Programs\AuraSort`).
+- Terms of Use and Privacy Policy 1.1.0 (the PIN and AuraSort's trash); the app asks to accept them again.
+- `requirements-optional.txt` is now `requirements.txt` (and `requirements-ai.txt`).
 - The log moved from `~/.aurasort/aurasort.log` to `~/.aurasort/logs/server.log`. "Delete my AuraSort data" removes both.
 
 ## [1.0.0]

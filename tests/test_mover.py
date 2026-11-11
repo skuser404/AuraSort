@@ -29,7 +29,7 @@ class MoverTest(TempHomeCase):
         self.assertEqual(job.extra["by_cat"]["Images"], dict(moved=2, bytes=30))
         self.assertEqual([c["name"] for c in job.extra["current"]], ["a.jpg", "b.jpg"])
         res = mover.undo(job.id)
-        self.assertEqual(res, dict(restored=2, missing=0))
+        self.assertEqual(res, dict(restored=2, missing=0, replaced_restored=0))
         self.assertTrue(os.path.exists(a) and os.path.exists(b))
         self.assertFalse((self.home / "Sorted/Images").exists(), "empty folders created by the move are removed")
         with self.assertRaises(ValueError):

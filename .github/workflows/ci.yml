@@ -3,19 +3,22 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    - cron: "17 6 * * 1"     # weekly: the README links and installers keep working even when nothing changes here
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   test:
-    name: unittest (${{ matrix.os }}, Python ${{ matrix.python }})
+    name: unit tests (${{ matrix.os }}, Python ${{ matrix.python }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        python: ["3.10", "3.12", "3.13"]   # 3.10 is the minimum (server.py refuses older versions)
+        python: ["3.10", "3.12", "3.13", "3.14"]   # 3.10 is the minimum (server.py refuses older versions)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -23,8 +26,131 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ matrix.python }}
-      - name: Unit tests (standard library only)
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"      # the contract tests run the real front-end request builders
+      - name: Unit tests, contract tests, no-emoji test (standard library only)
+        env:
+          AURASORT_TEST_TRASH_DIR: ${{ runner.temp }}/test-bin
         run: python -m unittest discover -s tests -t . -v
+      - name: Doctor runs on a brand-new home
+        shell: bash
+        run: |
+          export HOME="$RUNNER_TEMP/fresh home" USERPROFILE="$RUNNER_TEMP/fresh home"
+          mkdir -p "$HOME/Downloads" && echo hi > "$HOME/Downloads/a.txt"
+          python server.py --doctor --folder "$HOME/Downloads"
+
+  install:
+    name: install + smoke test (${{ matrix.os }}, Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.10", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        id: py
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Build the release assets exactly as a release does
+        run: python tools/build_release.py "${{ runner.temp }}/release"
+      - name: Install with install.sh (macOS / Linux), in a clean home
+        if: runner.os != 'Windows'
+        env:
+          AURASORT_PYTHON: ${{ steps.py.outputs.python-path }}
+        run: |
+          export HOME="$RUNNER_TEMP/home" && mkdir -p "$HOME"
+          sh "$RUNNER_TEMP/release/install.sh" --source "$RUNNER_TEMP/release" --yes --no-start --dir "$RUNNER_TEMP/app"
+          test -x "$HOME/.local/bin/aurasort" || test -x "$RUNNER_TEMP/app/start.command"
+      - name: Install with install.ps1 (Windows PowerShell 5.1), without admin rights in a normal folder
+        if: runner.os == 'Windows'
+        shell: powershell
+        env:
+          AURASORT_PYTHON: ${{ steps.py.outputs.python-path }}
+        run: |
+          & "$env:RUNNER_TEMP\release\install.ps1" -Source "$env:RUNNER_TEMP\release" -InstallDir "$env:RUNNER_TEMP\app" -Yes -NoStart -NoShortcuts
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          if (-not (Test-Path "$env:RUNNER_TEMP\app\server.py")) { throw 'not installed' }
+      - name: Installer -WhatIf changes nothing (PowerShell 7)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & "$env:RUNNER_TEMP\release\install.ps1" -Source "$env:RUNNER_TEMP\release" -InstallDir "$env:RUNNER_TEMP\whatif" -Yes -NoStart -WhatIf
+          if (Test-Path "$env:RUNNER_TEMP\whatif") { throw '-WhatIf created files' }
+      - name: Start the installed app in a clean home, scan a fixture folder, require more than 0 files
+        run: python tools/ci_smoke.py --app "${{ runner.temp }}/app"
+
+  readme:
+    name: README commands (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Run the README's manual install blocks (clone points at this checkout; the server runs --doctor)
+        run: python tools/readme_blocks.py ${{ runner.os == 'Windows' && 'pwsh' || 'sh' }}
+
+  links:
+    name: every README link answers 200
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: python tools/check_readme_urls.py README.md
+
+  e2e:
+    name: browser tests (Windows, Edge + Playwright)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+      - name: Playwright (test-only dependency, never part of the app)
+        run: npm install --no-save --prefix "$env:RUNNER_TEMP\pw" playwright@1.65.0
+      - name: All pages, Quick/Deep scans, PIN, move/copy/delete with PIN, conflicts, undo
+        shell: pwsh
+        run: |
+          $fx = "$env:RUNNER_TEMP\fx"; $out = "$env:RUNNER_TEMP\e2e-out"
+          foreach ($round in 'cdp', 'playwright') {
+            Get-Process python -ErrorAction SilentlyContinue | Stop-Process -Force
+            python tools\make_fixtures.py $fx | Out-Null
+            $env:USERPROFILE_BACKUP = $env:USERPROFILE
+            $env:USERPROFILE = "$fx\home"; $env:AURASORT_TEST_TRASH_DIR = "$fx\test-bin"; $env:AURASORT_STRICT_SCHEMA = '1'
+            Start-Process python -ArgumentList 'server.py', '--no-browser', '--port', '8799' -WindowStyle Hidden
+            Start-Process python -ArgumentList '-m', 'http.server', '8800', '--bind', '127.0.0.1', '--directory', 'docs' -WindowStyle Hidden
+            $env:USERPROFILE = $env:USERPROFILE_BACKUP   # only the test server sees the fixture home (Edge must not)
+            Start-Sleep 4
+            if ($round -eq 'cdp') {
+              node tests\e2e\app.e2e.mjs --home "$fx\home" --out "$out\app"; if ($LASTEXITCODE) { exit 1 }
+              node tests\e2e\checks.e2e.mjs --out "$out\checks"; if ($LASTEXITCODE) { exit 1 }
+              node tests\e2e\docai.e2e.mjs --out "$out\docai"; if ($LASTEXITCODE) { exit 1 }
+            } else {
+              node tests\e2e\full.pw.mjs --home "$fx\home" --out "$out\pw" --pw "$env:RUNNER_TEMP\pw"; if ($LASTEXITCODE) { exit 1 }
+            }
+          }
+      - uses: actions/upload-artifact@v4   # tag, not a commit SHA: replace with the SHA Dependabot proposes
+        if: failure()
+        with:
+          name: e2e-screenshots
+          path: ${{ runner.temp }}/e2e-out
 
   security:
     name: bandit + JavaScript syntax
@@ -44,4 +170,6 @@ jobs:
         with:
           node-version: "22"
       - name: JavaScript syntax check
-        run: for f in docs/js/*.js docs/js/views/*.js; do node --check "$f"; done
+        run: for f in docs/js/*.js docs/js/views/*.js tests/e2e/*.mjs; do node --check "$f"; done
+      - name: Shell scripts parse
+        run: for f in scripts/*.sh install-termux.sh start-termux.sh start.sh start.command; do sh -n "$f" || bash -n "$f"; done

@@ -1,7 +1,7 @@
 # Privacy Policy
 
-Version: 1.0.0
-Effective date: 10 November 2026
+Version: 1.1.0
+Effective date: 11 November 2026
 Owner: Sunil Kumar (GitHub: skuser404)
 
 > **Note:** Template provided for convenience, not legal advice. Have a qualified lawyer review before relying on it.
@@ -25,6 +25,9 @@ on macOS and Linux). On Windows it is readable by your account only; on macOS an
 | Thumbnails of pictures | `thumbs/` | you delete the data |
 | A log of errors (your token, keys and home folder path are masked) | `logs/server.log` | it rotates at 1 MB, keeping 3 files; it never contains file contents |
 | Document Insights results and extracted text | **memory only**, never on disk | 30, 60 or 90 minutes after a batch finishes (default 60), when AuraSort closes, or when a file is moved or deleted |
+| Your PIN, as a salted scrypt hash (never the PIN itself), and the count of wrong tries (so the lockout survives a restart) | `pin.json` | you change the PIN, or use *Forgot PIN* (which also wipes AuraSort's own data) |
+| A list of files in AuraSort's own trash (original place, size, date), for Restore | `apptrash.json` | the file is restored, or erased by the purge timer if you turned it on |
+| Files kept by *Replace*, and on Android every deleted file | a `.AuraSortTrash` folder on the same drive as the file (not in `.aurasort`) | you restore them, delete that folder yourself, or turn on the purge timer (off by default) |
 | A cloud API key, if you choose to remember it | your system keychain (Windows Credential Manager, macOS Keychain, Linux Secret Service) | you remove it or reset the AI settings |
 
 ## What may leave your computer
@@ -38,12 +41,13 @@ Nothing else is sent. The local AI engines (Ollama, LM Studio, llama.cpp) run on
 `127.0.0.1`.
 
 ## Browser storage
-AuraSort uses your browser's local storage only for your theme, the version of these terms you accepted, a few view
+AuraSort uses your browser's local storage only for your theme (never your PIN), the version of these terms you accepted, a few view
 preferences (such as grid or list) and its notification list. No cookies, no tracking.
 
 ## How to delete your data
 - In AuraSort: **Settings > Legal > Delete my AuraSort data**. This removes the index, History/Undo logs, snapshots,
-  thumbnails, settings, the log, Document Insights results and any saved API key. Your own files are not touched, and
+  thumbnails, settings, the log, Document Insights results and any saved API key. Your PIN stays set, and the list of
+  files in AuraSort's trash is kept so they can still be restored. Your own files are not touched, and
   files AuraSort moved for you stay where they are. (Without History, those moves can no longer be undone.)
 - Or with the uninstall scripts: `uninstall.ps1 -Purge` (Windows) or `uninstall.sh --purge` (macOS/Linux).
 
@@ -62,5 +66,5 @@ applies to it.
 New versions get a new version number and effective date, and AuraSort asks you to look at them again.
 
 ## Contact
-[GitHub Issues](https://github.com/skuser404/aurasort/issues) for questions; security problems privately through
-[GitHub Security Advisories](https://github.com/skuser404/aurasort/security/advisories/new).
+[GitHub Issues](https://github.com/skuser404/AuraSort/issues) for questions; security problems privately through
+[GitHub Security Advisories](https://github.com/skuser404/AuraSort/security/advisories/new).

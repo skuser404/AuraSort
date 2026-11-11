@@ -14,18 +14,17 @@ import socket
 import sys
 import threading
 import time
-import webbrowser
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
-from core import (checks, classify, config, copier, dates, docai, extract, hardware, history, index_db, instance, jobs, keystore, llm, mover, platform_utils, purge, scanner, schema, sensitive,
-                  settings, signing, trash)
+from core import (apptrash, checks, classify, config, conflicts, copier, dates, docai, extract, hardware, history, index_db, instance, jobs, keystore, llm, mover, pin,
+                  platform_utils, purge, scanner, schema, sensitive, settings, signing, trash)
 from core.log import add_secret, log, setup as setup_log
 from core.safety import canonical, check_destination, is_plain_file, protection_reason, safe_folder_name
 from core.web import ApiError, Handler, qs_get, route
 
 try:
-    from PIL import Image  # optional, faster thumbnails (pinned in requirements-optional.txt)
+    from PIL import Image  # optional, faster thumbnails (pinned in requirements.txt)
 except ImportError:  # pragma: no cover
     Image = None
 
@@ -116,14 +115,99 @@ def require_file(fid):
 # ---------------- info, drives, browsing, settings ----------------
 @route(R, "GET", "info")
 def r_info(h, qs, b):
-    """Why: product strings, platform facts and quick folders the UI needs once at start."""
-    h.send(200, dict(app=config.APP_NAME, tagline=config.TAGLINE, subline=config.SUBLINE, version=config.APP_VERSION,
-                     home=str(config.HOME), sep=os.sep, os=config.PLATFORM, quick=platform_utils.quick_folders(),
+    """Why: product strings, platform facts and quick folders the UI needs once at start. While locked (or before a PIN
+    exists) only what the welcome and unlock screens show: no folders, no paths."""
+    base = dict(app=config.APP_NAME, tagline=config.TAGLINE, subline=config.SUBLINE, version=config.APP_VERSION, os=config.PLATFORM,
+                os_name=platform_utils.OS_NAME, device=platform_utils.device_name(), os_user=platform_utils.os_user(),
+                admin=platform_utils.is_admin(), log_file=config.LOG_FILE_SHOWN, pin=pin.status(), trash_name=trash.where_name(),
+                python=platform_utils.PYTHON_VERSION)   # the error report ("Copy details") works on the unlock screen too
+    if not (pin.is_set() and pin.unlocked(touch=False)):
+        return h.send(200, dict(base, locked=True))
+    h.send(200, dict(base, locked=False, home=str(config.HOME), sep=os.sep, quick=platform_utils.quick_folders(),
                      dest=settings.load()["dest"] or platform_utils.default_destination(), pil=bool(Image),
-                     user=platform_utils.user_display_name(), admin=platform_utils.is_admin(),
-                     created_supported=platform_utils.CREATED_SUPPORTED, created_note=platform_utils.CREATED_NOTE,
-                     has_index=index_db.last_scan() is not None, log_file=config.LOG_FILE_SHOWN,
-                     os_name=platform_utils.OS_NAME, python=platform_utils.PYTHON_VERSION))
+                     user=platform_utils.user_display_name(), created_supported=platform_utils.CREATED_SUPPORTED,
+                     created_note=platform_utils.CREATED_NOTE, has_index=index_db.last_scan() is not None,
+                     apptrash=config.ANDROID or bool(apptrash.items())))
+
+
+# ---------------- PIN lock (core/pin.py; enforced for every route in core/web.py) ----------------
+def _pin_value(b, key="pin"):
+    v = b.get(key)
+    if not isinstance(v, str):
+        raise ApiError(400, "Enter the PIN as digits.", "bad_pin")
+    return v
+
+
+@route(R, "GET", "pin/status")
+def r_pin_status(h, qs, b):
+    h.send(200, dict(pin.status(), device=platform_utils.device_name(), os_user=platform_utils.os_user(), os_name=platform_utils.OS_NAME))
+
+
+@route(R, "POST", "pin/set")
+def r_pin_set(h, qs, b):
+    """Why: first run sets the PIN (4 or 6 digits); changing it needs the current PIN."""
+    current = b.get("current")
+    h.send(200, pin.set_pin(_pin_value(b), current=None if current is None else _pin_value(b, "current")))
+
+
+@route(R, "POST", "pin/unlock")
+def r_pin_unlock(h, qs, b):
+    pin.unlock(_pin_value(b))
+    h.send(200, {"ok": True})
+
+
+@route(R, "POST", "pin/lock")
+def r_pin_lock(h, qs, b):
+    pin.lock()
+    h.send(200, {"ok": True})
+
+
+@route(R, "POST", "pin/verify")
+def r_pin_verify(h, qs, b):
+    """Why: before a move, copy, delete, undo, replace, data wipe or API-key change the PIN is asked again; the answer
+    is a 60-second, single-use token for exactly that request."""
+    req = schema.obj(b, "request")
+    p = b.get("pin")
+    h.send(200, {"action_token": pin.issue(schema.text(b, "action"), req, None if p in (None, "") else _pin_value(b))})
+
+
+@route(R, "POST", "pin/reset")
+def r_pin_reset(h, qs, b):
+    """Why: 'Forgot PIN': wipes AuraSort's own settings, history and index (never your files); setup starts again."""
+    if b.get("confirm") != "RESET":
+        raise ApiError(400, "Type RESET to confirm.", "confirm_needed")
+    h.send(200, {"removed": pin.reset_everything()})
+
+
+@route(R, "POST", "pin/settings")
+def r_pin_settings(h, qs, b):
+    """Why: idle lock, 'remember for N minutes' and the AuraSort trash purge timer (PIN needed: they weaken protection)."""
+    h.send(200, {k: v for k, v in settings.update(**{k: b[k] for k in settings.SECURITY_KEYS if k in b}).items() if k in settings.SECURITY_KEYS})
+
+
+# ---------------- AuraSort's own trash (Android; files kept by "Replace") ----------------
+@route(R, "GET", "apptrash")
+def r_apptrash(h, qs, b):
+    apptrash.purge_old()
+    h.send(200, dict(items=apptrash.items(), purge_days=settings.load()["apptrash_purge_days"], purge_choices=config.APPTRASH_PURGE_CHOICES_DAYS))
+
+
+@route(R, "POST", "apptrash/restore")
+def r_apptrash_restore(h, qs, b):
+    """Why: put a file back from the AuraSort trash (never over another file)."""
+    try:
+        h.send(200, {"path": apptrash.restore(schema.text(b, "id"))})
+    except OSError:
+        raise ApiError(400, "That file could not be put back (its folder is read-only, or the drive is missing).") from None
+
+
+@route(R, "GET", "diagnostics")
+def r_diagnostics(h, qs, b):
+    """Why: Settings > Diagnostics shows the same report as 'py server.py --doctor' (the test scan only when asked)."""
+    from core import doctor
+    d = doctor.collect(scan=qs_get(qs, "scan") == "1")
+    d["text"] = doctor.as_text(d)
+    h.send(200, d)
 
 
 @route(R, "GET", "drives")
@@ -182,7 +266,7 @@ def r_settings(h, qs, b):
 @route(R, "POST", "settings")
 def r_settings_save(h, qs, b):
     """Why: scan folders, skip list, destination and opt-ins are remembered between runs."""
-    h.send(200, settings.update(**{k: v for k, v in b.items() if k in settings.DEFAULTS}))
+    h.send(200, settings.update(**{k: v for k, v in b.items() if k in settings.DEFAULTS and k not in settings.SECURITY_KEYS}))
 
 
 @route(R, "GET", "disk")
@@ -530,9 +614,8 @@ def _ids(b):
     return schema.id_list(b, required=True)
 
 
-@route(R, "POST", "execute")
-def r_execute(h, qs, b):
-    """Why: starts a move/copy job from explicit ids (selection) or the preview's filters; progress via /api/job."""
+def _transfer_request(b):
+    """Why: the conflict preview and the move itself read the request the same way (destination, mode, layout, files)."""
     dest = check_destination(b.get("dest", ""))
     mode = b.get("mode", "move")
     if mode not in ("move", "copy"):
@@ -540,23 +623,42 @@ def r_execute(h, qs, b):
     layout = b.get("layout") or ("type" if b.get("flat") else "organized")
     if layout not in LAYOUTS:
         raise ApiError(400, "Unknown layout.")
+    ids = _ids(b) if b.get("ids") is not None else index_db.ids_for(_plan_filters(b))[0]
+    ops, blocked = _ops_for(ids, b, layout)
+    return dest, mode, ops, blocked
+
+
+@route(R, "POST", "conflicts")
+def r_conflicts(h, qs, b):
+    """Why: before a move or copy: which files already exist where they would go ("12 files already exist in this
+    folder"), both sides' size and date, and whether the content is identical. Read-only."""
+    if b.get("kind") == "quarantine":   # the Corrupted page's Quarantine: same rules, its own folder
+        dest, ops = _quarantine_dest(create=False), _ops_for(_ids(b), b, "here")[0]
+    else:
+        dest, _, ops, _ = _transfer_request(b)
+    h.send(200, conflicts.find(ops, dest) if os.path.isdir(dest) else dict(total=0, identical=0, rows=[], more=0))
+
+
+@route(R, "POST", "execute")
+def r_execute(h, qs, b):
+    """Why: starts a move/copy job from explicit ids (selection) or the preview's filters; progress via /api/job."""
+    dest, mode, ops, blocked = _transfer_request(b)
     verify = b.get("verify") or config.VERIFY_DEFAULT
     if verify not in copier.VERIFY_MODES:
         raise ApiError(400, "Unknown verification mode.")
-    ids = _ids(b) if b.get("ids") is not None else index_db.ids_for(_plan_filters(b))[0]
-    ops, blocked = _ops_for(ids, b, layout)
+    choice = conflicts.clean_choice(b.get("conflicts"))
     _check_space(dest, mode, ops)
-    job = _start_transfer(dest, mode, ops, verify, blocked=blocked)
+    job = _start_transfer(dest, mode, ops, verify, blocked=blocked, conflicts=choice)
     settings.remember_destination(dest)
     h.send(200, {"job": job.id, "count": len(ops), "blocked": blocked, "by_cat": _by_cat(ops)})
 
 
-def _start_transfer(dest, mode, ops, verify, label="", **extra):
+def _start_transfer(dest, mode, ops, verify, label="", conflicts=None, **extra):
     """Why: one place starts a move/copy job and keeps the index in step with every finished file."""
     def on_done(op, dst):
         (index_db.record_move if mode == "move" else index_db.record_copy)(op["fid"], dst)
     job = jobs.Job("move", total=len(ops), total_bytes=sum(o["size"] for o in ops), **extra)
-    return jobs.start(job, lambda j: mover.run(j, dest, mode, ops, on_done, label=label, verify_mode=verify))
+    return jobs.start(job, lambda j: mover.run(j, dest, mode, ops, on_done, label=label, verify_mode=verify, conflicts=conflicts))
 
 
 def _existing(path):
@@ -658,15 +760,21 @@ def r_cleanup_ids(h, qs, b):
     h.send(200, dict(ids=ids, sizes=sizes))
 
 
+def _quarantine_dest(create=True):
+    base_dest = settings.load()["dest"] or platform_utils.default_destination()
+    if create:
+        os.makedirs(base_dest, exist_ok=True)
+    return check_destination(os.path.join(base_dest, "Quarantine"))
+
+
 @route(R, "POST", "quarantine")
 def r_quarantine(h, qs, b):
     """Why: move problem files into one Quarantine folder (a normal, undoable move, labelled in History)."""
-    base_dest = settings.load()["dest"] or platform_utils.default_destination()
-    os.makedirs(base_dest, exist_ok=True)
-    dest = check_destination(os.path.join(base_dest, "Quarantine"))
+    dest = _quarantine_dest()
     ops, blocked = _ops_for(_ids(b), b, "here")
     _check_space(dest, "move", ops)
-    job = _start_transfer(dest, "move", ops, b.get("verify") or config.VERIFY_DEFAULT, blocked=blocked, label="quarantine")
+    job = _start_transfer(dest, "move", ops, b.get("verify") or config.VERIFY_DEFAULT, blocked=blocked, label="quarantine",
+                          conflicts=conflicts.clean_choice(b.get("conflicts")))
     h.send(200, {"job": job.id, "count": len(ops), "blocked": blocked, "by_cat": _by_cat(ops), "dest": dest})
 
 
@@ -979,17 +1087,44 @@ def prepare():
     index_db.init()
 
 
+def console_utf8():
+    """Why: a Windows console in cp1252/cp437 crashes print() on a non-English name; replace what it cannot show instead."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError, OSError):
+            pass
+
+
+def system_folder_warning():
+    """Why: a terminal opened with 'Run as administrator' starts in C:\\Windows\\System32; nothing of ours belongs there."""
+    if not config.WIN:
+        return ""
+    cwd, windir = os.path.normcase(os.getcwd()), os.path.normcase(os.environ.get("WINDIR", r"C:\Windows"))
+    if cwd == windir or cwd.startswith(windir + os.sep):
+        return ("  Note: this terminal is in the Windows folder (C:\\Windows\\System32), which usually means it was opened with\n"
+                "  'Run as administrator'. That is not needed. Close it, open a normal terminal, and run: cd $HOME\n")
+    return ""
+
+
 def main():
     if sys.version_info < (3, 10):
         sys.exit(f"{config.APP_NAME} needs Python 3.10 or newer (this is {sys.version.split()[0]}). Get it from python.org.")
     """Why: parse arguments, prepare data, start the local-only server."""
+    console_utf8()
     ap = argparse.ArgumentParser(description=f"{config.APP_NAME} - {config.TAGLINE} (local server)")
     ap.add_argument("--port", type=int, default=config.DEFAULT_PORT)
     ap.add_argument("--host", default=config.BIND_HOST, help="must be 127.0.0.1 (local only)")
     ap.add_argument("--no-browser", action="store_true")
+    ap.add_argument("--doctor", action="store_true", help="check this computer (Python, data folder, SQLite, folders, a 3-second test scan) and exit")
+    ap.add_argument("--folder", default="", help="with --doctor: the folder to test-scan (default: the first Quick Scan folder)")
+    ap.add_argument("--json", action="store_true", help="with --doctor: print JSON instead of text")
     a = ap.parse_args()
     if a.host not in config.LOCAL_HOSTNAMES:
         sys.exit(f"{config.APP_NAME} only listens on 127.0.0.1 (refusing {a.host!r}).")
+    if a.doctor:
+        from core import doctor
+        sys.exit(doctor.main(a.folder or None, a.json))
     setup_log()
     if not instance.acquire():
         port = instance.running_port()
@@ -997,7 +1132,7 @@ def main():
         print(f"\n  {config.APP_NAME} is already running{' at ' + url if url else ''}.\n"
               "  Only one copy can use your data folder at a time (two would fight over the file index).\n", flush=True)
         if url and not a.no_browser:
-            webbrowser.open(url)
+            platform_utils.open_url(url)
         sys.exit(0)
     prepare()
     Handler.token = secrets.token_urlsafe(config.TOKEN_BYTES)
@@ -1008,14 +1143,18 @@ def main():
     print(f"\n  {config.APP_NAME} - {config.TAGLINE}\n  running at {url}\n  (local only - press Ctrl+C to stop)\n"
           f"  Log file: {config.LOG_FILE}\n", flush=True)
     if platform_utils.is_admin():
-        print("  Warning: running as Administrator/root. Run it as a normal user unless you really need to.\n", flush=True)
+        print("  Warning: running as Administrator/root. AuraSort does not need it, and it changes which folders you see.\n"
+              "  Close this window and start it from a normal terminal (not 'Run as administrator').\n", flush=True)
         log.warning("running with administrator/root rights")
+    note = system_folder_warning()
+    if note:
+        print(note, flush=True)
     if trash.fake_bin_dir():
         print(f"  Test mode: 'Recycle Bin' moves files into {trash.fake_bin_dir()} ({trash.TEST_TRASH_ENV} is set).\n", flush=True)
         log.warning("test bin folder in use instead of the Recycle Bin")
     atexit.register(docai.stop_engine)   # only stops the AI engine if AuraSort started it
     if not a.no_browser:
-        threading.Timer(0.6, lambda: webbrowser.open(url)).start()
+        threading.Timer(0.6, lambda: platform_utils.open_url(url)).start()
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

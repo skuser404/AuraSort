@@ -133,7 +133,7 @@ const DemoApi = (() => {
   }
   return {
     table, version: () => st.ver,
-    info: async () => ({ app: APP.name, tagline: APP.tagline, subline: APP.subline, version: '1.0.0', home: 'C:\\Users\\Alex', sep: '\\', os: 'demo', user: 'Alex Morgan', admin: false,
+    info: async () => ({ app: APP.name, tagline: APP.tagline, subline: APP.subline, version: '1.1.0', home: 'C:\\Users\\Alex', sep: '\\', os: 'demo', user: 'Alex Morgan', admin: false,
       quick: ['Downloads', 'Documents', 'Desktop', 'Pictures', 'Videos', 'Music'].map(n => ({ name: n, path: U + n, exists: true })), dest: U + 'AuraSortFiles', created_supported: true, has_index: !!st.scanDone }),
     drives: async () => [{ id: 'C:\\', root: 'C:\\', name: 'Local Disk', type: 'internal', fs: 'NTFS', ready: true, total: 512e9, used: 389e9, free: 123e9 },
       { id: 'D:\\', root: 'D:\\', name: 'Backup', type: 'external', fs: 'exFAT', ready: true, total: 1e12, used: 420e9, free: 580e9 },
@@ -188,6 +188,9 @@ const DemoApi = (() => {
       st.jobs[id] = { kind: 'trash', t0: Date.now(), ids: ok.map(i => T.id[i]), sizes: ok.map(i => T.size[i]), cats: ok.map(i => T.cat[i]), names: ok.map(i => T.name[i]), state: 'running' };
       return { job: id, count: ok.length, blocked: idx.length - ok.length, by_cat: by } },
     mkdir: async (parent, name) => { if (!name || /[<>:"/\\|?*]/.test(name)) throw new Error('That folder name is not allowed.'); return { path: String(parent).replace(/\\$/, '') + '\\' + name } },
+    pinStatus: async () => ({ set: true, unlocked: true, demo: true, digits: 4, idle_min: 10, remember_min: 0 }), pinLock: async () => ({ ok: true }),
+    appTrash: async () => ({ items: [], purge_days: 0, purge_choices: [0, 30, 60, 90] }), conflicts: async () => ({ total: 0, identical: 0, rows: [], more: 0 }),
+    diagnostics: async () => ({ status: 'ok', checks: [{ name: 'Demo', status: 'ok', value: 'The demo runs in your browser with made-up files. Run AuraSort on your computer and use py server.py --doctor for real diagnostics.' }], text: 'AuraSort demo: no diagnostics (nothing on your computer is read).' }),
     openTrash: async () => ({ ok: true, demo: true }), aiStatus: async () => ({ demo: true }), interrupted: async () => [], deleteData: async () => ({ removed: ['demo data (nothing real is stored)'] }),
     integrityResults: async () => ({ total: 0, page: 1, pages: 1, per: 100, size: 0, rows: [], summary: { checked: 0, problems: 0, by_sev: {}, hint: '' } }),
     integrityStart: async () => { throw new Error('The demo does not read files. Run AuraSort on your computer to check them.') },

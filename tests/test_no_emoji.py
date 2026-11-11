@@ -47,7 +47,12 @@ class NoEmojiTest(unittest.TestCase):
             rel = os.path.relpath(path, ROOT)
             if rel.startswith("docs") and path.endswith((".js", ".html")) or rel == "README.md":
                 with open(path, encoding="utf-8") as fh:
-                    hits += [f"{rel}: {m.group(0)}" for m in hype.finditer(fh.read())]
+                    text = fh.read()
+                for m in hype.finditer(text):
+                    near = (text[max(0, m.start() - 60):m.start()] + text[m.end():m.end() + 60]).lower()
+                    if m.group(0).lower() == "unlock" and re.search(r"pin|locked|lock screen|pinunlock|unlockscreen|aurasort", near):
+                        continue   # the PIN lock's own word ("Unlock AuraSort"), not marketing ("unlock your potential")
+                    hits.append(f"{rel}: {m.group(0)}")
         self.assertEqual(hits, [])
 
     def test_every_used_icon_exists_in_the_sprite(self):

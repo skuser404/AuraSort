@@ -9,7 +9,7 @@ import zlib
 from . import config
 
 try:
-    from pypdf import PdfReader  # optional, pure Python (see requirements-optional.txt)
+    from pypdf import PdfReader  # optional, pure Python (see requirements.txt)
 except ImportError:  # pragma: no cover
     PdfReader = None
 

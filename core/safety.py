@@ -4,7 +4,7 @@ import re
 import stat
 
 from . import config
-from .platform_utils import within
+from .platform_utils import is_reparse_or_link, long_path, within
 
 WIN, MAC = config.WIN, config.MAC
 _nc = os.path.normcase
@@ -13,7 +13,7 @@ _nc = os.path.normcase
 PROTECTED_NAMES = frozenset((
     "node_modules", ".git", ".svn", ".hg", "__pycache__", "venv", ".venv", "site-packages", "appdata", ".cache", ".npm",
     ".gradle", ".m2", ".idea", ".vscode", ".trash", ".trashes", ".spotlight-v100", ".fseventsd", ".documentrevisions-v100",
-    ".temporaryitems", ".tox", ".mypy_cache", ".pytest_cache", "windowsapps",
+    ".temporaryitems", ".tox", ".mypy_cache", ".pytest_cache", "windowsapps", ".aurasorttrash",
 ))
 # System folders that only count when they sit directly in a drive root (C:\Recovery, E:\$Recycle.Bin ...).
 ROOT_SYSTEM_NAMES = frozenset((
@@ -30,6 +30,9 @@ def _env_paths(*keys):
 def protected_prefixes():
     """Why: whole system trees (Windows, Program Files, /System, /usr...) are off-limits on every platform."""
     home = str(config.HOME)
+    if config.ANDROID:   # Termux: Android's own system, Termux's programs, and other apps' private data
+        return ["/system", "/vendor", "/apex", "/product", "/proc", "/sys", "/dev", os.environ.get("PREFIX") or "/data/data/com.termux/files/usr",
+                "/storage/emulated/0/Android", os.path.join(home, ".local", "share", "Trash")]
     if WIN:
         return _env_paths("WINDIR", "ProgramFiles", "ProgramFiles(x86)", "ProgramW6432", "ProgramData", "APPDATA",
                           "LOCALAPPDATA") + [os.path.join(home, "AppData")]
@@ -53,8 +56,17 @@ def _prefixes():
     """Why: computed once (canonical form); the environment does not change while the server runs."""
     global _PREFIXES
     if _PREFIXES is None:
-        _PREFIXES = sorted({_nc(canonical(p)) for p in protected_prefixes()} | {_nc(os.path.abspath(p)) for p in protected_prefixes()})
+        homes = {_nc(canonical(config.HOME)), _nc(os.path.abspath(str(config.HOME)))}   # both spellings (8.3 and long)
+        found = {_nc(canonical(p)) for p in protected_prefixes()} | {_nc(os.path.abspath(p)) for p in protected_prefixes()}
+        # A home folder inside a "system" tree (root's /root on Linux) must stay scannable, or every scan finds 0 files.
+        _PREFIXES = sorted(p for p in found if not any(within(h, p) for h in homes))
     return _PREFIXES
+
+
+def _home_or_above(p):
+    """Why: a user called 'venv' or 'AppData' must not have the home folder itself treated as a tool folder."""
+    home = _nc(os.path.abspath(str(config.HOME)))
+    return p == home or within(home, p)
 
 
 _DATA_CANON = {}
@@ -73,7 +85,7 @@ def protection_reason(path):
     """Why: the UI explains *why* a folder is locked; None means the path is not protected."""
     p = _nc(os.path.abspath(path))
     base = os.path.basename(p).lower()
-    if base in PROTECTED_NAMES:
+    if base in PROTECTED_NAMES and not _home_or_above(p):
         return f"'{os.path.basename(path)}' is a system or tool folder"
     parent = os.path.dirname(p)
     if base in ROOT_SYSTEM_NAMES and os.path.dirname(parent) == parent:
@@ -106,15 +118,29 @@ ASSET_DIR_RX = re.compile(r"^(assets?|static|public|res|resources|drawable.*|mip
                           r"cache|wp-content|_next|dist|build|out|www|themes?|plugins?|vendor|media|uploads)$", re.I)
 
 
-def is_project(names):
-    """Why: files inside a project (website, app, video edit...) belong to it; moving them breaks the project."""
+# One of these alone is weak evidence (a stray requirements.txt, a .gitignore or a downloaded .blend file in Downloads
+# says little). A scan root or a folder above it needs a strong marker or two different weak ones to count as a project.
+WEAK_PROJECT_FILES = frozenset("requirements.txt Makefile Dockerfile docker-compose.yml .gitignore .vscode .idea .project .classpath setup.cfg".split())
+WEAK_PROJECT_EXTS = (".blend", ".psd_project", ".sketch", ".fig", ".xd", ".indd", ".kdenlive", ".fcpxml", ".flp", ".als", ".band",
+                     ".aep", ".aepx", ".prproj", ".drp", ".cpr", ".ptx", ".logicx", ".unity", ".uasset")
+
+
+def project_markers(names):
+    """Why: (strong, weak) marker counts, so 'is this a project' can be strict where a wrong yes would lock everything."""
     names = set(names)
-    if names & PROJECT_FILES:
-        return True
     low = {n.lower() for n in names}
-    if any(n.endswith(PROJECT_EXTS) for n in low):
-        return True
-    return bool(("index.html" in low or "index.htm" in low) and (low & WEB_DIRS))
+    strong = len((names & PROJECT_FILES) - WEAK_PROJECT_FILES) + sum(1 for n in low if n.endswith(PROJECT_EXTS) and not n.endswith(WEAK_PROJECT_EXTS))
+    weak = len(names & WEAK_PROJECT_FILES) + sum(1 for n in low if n.endswith(WEAK_PROJECT_EXTS))
+    if ("index.html" in low or "index.htm" in low) and (low & WEB_DIRS):
+        weak += 1
+    return strong, weak
+
+
+def is_project(names, strict=False):
+    """Why: files inside a project (website, app, video edit...) belong to it; moving them breaks the project.
+    strict=True (scan roots and the folders above them): one weak marker is not enough."""
+    strong, weak = project_markers(names)
+    return strong > 0 or (weak >= 2 if strict else weak > 0)
 
 
 def is_asset_dir(path):
@@ -174,10 +200,10 @@ def real_inside(child, root):
 def is_plain_file(path):
     """Why: right before acting we refuse links/junctions and anything that is not a regular file."""
     try:
-        st = os.lstat(path)
+        st = os.lstat(long_path(path))
     except OSError:
         return False
-    if stat.S_ISLNK(st.st_mode) or getattr(st, "st_file_attributes", 0) & 0x400:
+    if is_reparse_or_link(st):     # links and junctions only; a OneDrive placeholder is a real file
         return False
     return stat.S_ISREG(st.st_mode)
 

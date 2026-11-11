@@ -9,8 +9,10 @@ const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const base = p => String(p).split(/[\\/]/).filter(Boolean).pop() || String(p);
 const parentOf = p => { const s = String(p), i = Math.max(s.lastIndexOf('\\'), s.lastIndexOf('/')); return i > 0 ? s.slice(0, i) : '' };
-const pct = (a, b) => b ? a / b * 100 : 0;
-const pctTxt = p => (p > 0 && p < 1 ? '<1' : Math.round(p)) + '%';
+// Why: every percentage uses one rule: clamped to 0-100, and "n/a" when there is nothing to divide by (never 197%).
+const share = (a, b) => (b > 0 && isFinite(a) && isFinite(b)) ? Math.min(100, Math.max(0, a / b * 100)) : null;
+const pct = (a, b) => share(a, b) ?? 0;   // bar widths
+const pctTxt = p => p == null || !isFinite(p) ? 'n/a' : (p > 0 && p < 1 ? '<1' : Math.round(Math.min(100, Math.max(0, p)))) + '%';
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)');
 const motion = () => !REDUCED.matches;
 const easeOut = t => 1 - Math.pow(1 - t, 3);

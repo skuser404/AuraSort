@@ -11,7 +11,7 @@ import time
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlparse
 
-from . import config, schema
+from . import config, pin, schema
 from .log import log
 
 STATIC_TYPES = {"html": "text/html; charset=utf-8", "js": "text/javascript; charset=utf-8", "mjs": "text/javascript; charset=utf-8", "css": "text/css; charset=utf-8",
@@ -31,7 +31,10 @@ COMPRESSIBLE = ("application/json", "text/")
 SIGNED_ROUTES = ("thumb", "file")          # authorised by an expiring HMAC signature instead of the token header
 RATE_KEYS = {"scan/start": "scan", "scan/estimate": "estimate", "execute": "execute", "trash": "trash", "open": "open",
              "integrity/start": "integrity", "duplicates/start": "duplicates", "mkdir": "mkdir", "undo": "undo",
-             "quarantine": "execute", "ai/start": "ai", "ai/pull": "ai", "ai/test": "ai", "ai/key": "ai", "ai/engine/start": "ai"}
+             "quarantine": "execute", "ai/start": "ai", "ai/pull": "ai", "ai/test": "ai", "ai/key": "ai", "ai/engine/start": "ai",
+             "pin/unlock": "pin", "pin/verify": "pin", "pin/set": "pin", "pin/reset": "pin", "diagnostics": "diagnostics",
+             "apptrash/restore": "undo", "conflicts": "estimate"}
+PASSIVE_ROUTES = ("scan/status", "job", "pin/status")   # polling: does not count as activity for the idle lock
 _RATE, _RATE_LOCK = {}, threading.Lock()
 # Legal documents live once, at the repo root; the app shows exactly those files at legal/<name> (allow-list only).
 LEGAL_FILES = ("TERMS_OF_USE.md", "ACCEPTABLE_USE.md", "PRIVACY_POLICY.md", "AI_DATA_NOTICE.md", "THIRD_PARTY_NOTICES.md", "CODE_OF_CONDUCT.md", "LICENSE")
@@ -56,7 +59,7 @@ class ApiError(Exception):
 
 
 STATUS_CODES = {400: "invalid", 401: "session_expired", 403: "forbidden", 404: "not_found", 405: "not_allowed", 409: "confirm_needed",
-                413: "too_large", 416: "bad_range", 429: "rate_limited", 500: "internal", 507: "disk_full"}
+                413: "too_large", 416: "bad_range", 423: "locked", 429: "rate_limited", 500: "internal", 507: "disk_full"}
 INTERNAL_HINT = f"Details are in the log file: {config.LOG_FILE_SHOWN}"
 
 
@@ -95,9 +98,9 @@ class Handler(BaseHTTPRequestHandler):
         if self.command != "HEAD":
             self.wfile.write(body)
 
-    def fail(self, status, message, code="", hint=""):
+    def fail(self, status, message, code="", hint="", **extra):
         """Why: every API error has the same shape, {error, code, hint}; the UI maps the code to friendly text."""
-        self.send(status, {"error": message, "code": code or STATUS_CODES.get(status, "error"), "hint": hint})
+        self.send(status, {"error": message, "code": code or STATUS_CODES.get(status, "error"), "hint": hint, **extra})
 
     def send_file(self, path, ctype, extra=None):
         """Why: previews stream big files in chunks and honour one HTTP range, so video and audio can seek."""
@@ -181,7 +184,7 @@ class Handler(BaseHTTPRequestHandler):
         return body
 
     # ---------------- dispatch ----------------
-    def refuse(self, status, message):
+    def refuse(self, status, message, code=""):
         """Why: a request refused before its body is read (403/401/405/429) still has that body on the socket; closing
         with unread data makes Windows reset the connection, and the browser then sees "connection reset" instead of
         our JSON error. Small bodies are read and dropped first; big ones close the connection on purpose."""
@@ -193,7 +196,18 @@ class Handler(BaseHTTPRequestHandler):
             self.rfile.read(n)
         elif n:
             self.close_connection = True
-        return self.fail(status, message)
+        return self.fail(status, message, code)
+
+    def pin_gate(self, name):
+        """Why: the PIN lock is enforced here, for every API route (signed preview links included), not only in the UI.
+        Before a PIN exists only the setup screens work; while locked only the unlock screen does."""
+        if name in config.PIN_OPEN_ROUTES:
+            return None
+        if not pin.is_set():
+            return (423, "Set up your PIN first.", "pin_not_set")
+        if not pin.unlocked(touch=name not in PASSIVE_ROUTES):
+            return (423, "AuraSort is locked. Enter your PIN to unlock it.", "locked")
+        return None
 
     def handle_any(self, method):
         u = urlparse(self.path)
@@ -210,6 +224,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.refuse(401, "Session expired. Reload the page.")
         if not self.rate_ok(name):
             return self.refuse(429, "Too many requests. Wait a moment and try again.")
+        gate = self.pin_gate(name)
+        if gate:
+            return self.refuse(*gate)
         try:
             body = self.read_json() if method == "POST" else {}
             fn = self.routes.get(f"{'GET' if method == 'HEAD' else method} {name}")   # HEAD = GET without the body
@@ -217,9 +234,14 @@ class Handler(BaseHTTPRequestHandler):
                 raise ApiError(404, "Unknown endpoint.")
             if method == "POST":
                 schema.check_fields(name, body)
+                action = config.PIN_GUARDED.get(name)
+                if action:   # move, copy, delete, undo, replace, data wipe, API keys: a fresh PIN confirmation for this exact request
+                    pin.consume(body.pop("action_token", None), action, body)
             fn(self, parse_qs(u.query), body)
         except ApiError as ex:
             self.fail(ex.status, str(ex), ex.code, ex.hint)
+        except pin.PinError as ex:
+            self.fail(ex.status, str(ex), ex.code, "", **ex.extra)
         except schema.BadRequest as ex:
             self.fail(400, str(ex), ex.code, ex.hint)
         except ValueError as ex:   # our own checks raise ValueError with friendly text; parser errors become generic

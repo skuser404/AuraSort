@@ -12,15 +12,18 @@ import urllib.request
 
 from tests import fixtures as fx
 from tests.base import TempHomeCase
-from core import config, index_db, log as alog, scanner, signing
+from core import config, index_db, log as alog, pin, scanner, signing, web
 from core.web import Handler
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TOKEN = "test-token-123"
+TEST_PIN = "4826"
 
 
 class ServerCase(TempHomeCase):
     """Why: a real HTTP server on a free loopback port, with the test's private HOME."""
+
+    set_pin = True   # most tests run unlocked with a PIN set, like the app after setup; PIN tests turn this off
 
     def setUp(self):
         super().setUp()
@@ -28,15 +31,38 @@ class ServerCase(TempHomeCase):
         self.server_mod = server
         server.prepare()
         Handler.token = TOKEN
+        self._pin_n = config.PIN_SCRYPT_N
+        config.PIN_SCRYPT_N = 2 ** 10      # tests only: a cheaper hash so 200 tests stay fast (real runs use 2**15)
+        self.addCleanup(setattr, config, "PIN_SCRYPT_N", self._pin_n)   # runs even if a subclass's setUp fails
+        self.addCleanup(pin.lock)
+        pin.lock()
+        if self.set_pin:
+            pin.set_pin(TEST_PIN)          # also unlocks
         self.srv, self.port = server.make_server(8900)
         threading.Thread(target=self.srv.serve_forever, daemon=True).start()
+        self.addCleanup(self._stop)      # safety net if a subclass's setUp fails (tearDown would not run)
+
+    def _stop(self):
+        if getattr(self, "srv", None):
+            self.srv.shutdown()
+            self.srv.server_close()
+            self.srv = None
 
     def tearDown(self):
-        self.srv.shutdown()
-        self.srv.server_close()
+        self._stop()                     # before the temp home is deleted
         super().tearDown()
 
-    def req(self, path, body=None, headers=None, method=None, raw=None, host=None):
+    def action_token(self, route, body):
+        """The real UI flow: ask /api/pin/verify for a single-use token bound to this exact request."""
+        web._RATE.pop("pin", None)
+        st, _, raw = self.req("/api/pin/verify", {"pin": TEST_PIN, "action": config.PIN_GUARDED[route], "request": body})
+        self.assertEqual(st, 200, raw)
+        return json.loads(raw)["action_token"]
+
+    def req(self, path, body=None, headers=None, method=None, raw=None, host=None, pin=True):
+        route = path[5:].split("?")[0] if path.startswith("/api/") else ""
+        if pin and isinstance(body, dict) and route in config.PIN_GUARDED and "action_token" not in body and raw is None:
+            body = dict(body, action_token=self.action_token(route, body))
         h = {"Host": host or f"127.0.0.1:{self.port}", config.TOKEN_HEADER: TOKEN, "Content-Type": "application/json"}
         h.update(headers or {})
         h = {k: v for k, v in h.items() if v is not None}

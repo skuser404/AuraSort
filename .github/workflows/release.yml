@@ -1,4 +1,6 @@
 name: Release
+# Push a tag like v1.1.0 to publish a release. Its assets keep the same names in every version, so the README's
+# https://github.com/skuser404/AuraSort/releases/latest/download/<name> links always point at the newest release.
 on:
   push:
     tags: ["v*.*.*"]
@@ -18,18 +20,29 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.13"
-      - name: Test before releasing
-        run: python -m unittest discover -s tests -t .
-      - name: Build ZIP + SHA256SUMS
+      - name: The tag matches the app version
         env:
           TAG: ${{ github.ref_name }}
         run: |
-          mkdir -p dist
-          git archive --format=zip --prefix=aurasort/ -o "dist/aurasort-${TAG}.zip" "${TAG}"
-          cp scripts/install.ps1 scripts/install.sh dist/
-          cd dist && sha256sum aurasort-*.zip install.ps1 install.sh > SHA256SUMS && cat SHA256SUMS
-      - name: Publish release
+          v=$(sed -n 's/^APP_VERSION = "\(.*\)"/\1/p' core/config.py)
+          test "v$v" = "$TAG" || { echo "core/config.py says $v but the tag is $TAG"; exit 1; }
+      - name: Test before releasing
+        env:
+          AURASORT_TEST_TRASH_DIR: ${{ runner.temp }}/test-bin
+        run: python -m unittest discover -s tests -t .
+      - name: Build aurasort.zip, the installers and SHA256SUMS
+        run: python tools/build_release.py dist && cat dist/SHA256SUMS
+      - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
-        run: gh release create "${TAG}" dist/* --title "AuraSort ${TAG}" --generate-notes --verify-tag
+        run: |
+          gh release create "$TAG" dist/aurasort.zip dist/install.ps1 dist/install.sh dist/install-termux.sh dist/SHA256SUMS \
+            --title "AuraSort $TAG" --notes-file .github/RELEASE_TEMPLATE.md --verify-tag
+      - name: The README's download links work for this release
+        run: |
+          sleep 20
+          for f in aurasort.zip install.ps1 install.sh install-termux.sh SHA256SUMS; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' -L "https://github.com/${{ github.repository }}/releases/latest/download/$f")
+            echo "$f: $code"; test "$code" = 200
+          done

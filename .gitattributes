@@ -1,0 +1,9 @@
+# Why: one line-ending rule for everyone. Shell scripts with Windows line endings fail on macOS/Linux/Termux
+# ("bad interpreter: /bin/sh^M"), and cmd.exe needs CRLF in .bat files.
+* text=auto eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.png binary
+*.jpg binary
+*.ico binary
+*.zip binary

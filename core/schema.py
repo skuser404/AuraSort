@@ -20,7 +20,7 @@ class BadRequest(ValueError):
 
 # Every POST body field each route reads. tests/test_contract.py checks server.py reads nothing else and the UI sends nothing else.
 POST_FIELDS = {
-    "settings": tuple(settings.DEFAULTS),
+    "settings": tuple(k for k in settings.DEFAULTS if k not in settings.SECURITY_KEYS),
     "scan/estimate": ("mode", "roots"),
     "scan/start": ("mode", "roots", "skip", "est_files"),
     "scan/control": ("action",),
@@ -29,10 +29,11 @@ POST_FIELDS = {
     "open": ("id", "macro_ok"),
     "reveal": ("id", "job"),
     "plan": ("dest", "formats", "types"),
-    "execute": ("allow_project", "allow_viewonly", "dest", "flat", "formats", "ids", "layout", "mode", "types", "verify"),
+    "execute": ("allow_project", "allow_viewonly", "conflicts", "dest", "flat", "formats", "ids", "layout", "mode", "types", "verify"),
+    "conflicts": ("allow_project", "allow_viewonly", "dest", "flat", "formats", "ids", "kind", "layout", "mode", "types"),
     "integrity/start": ("ids", "mode"),
     "duplicates/start": (),
-    "quarantine": ("allow_project", "allow_viewonly", "ids", "verify"),
+    "quarantine": ("allow_project", "allow_viewonly", "conflicts", "ids", "verify"),
     "data/delete": ("confirm",),
     "interrupted/resume": ("id",),
     "interrupted/clean": ("id",),
@@ -51,7 +52,17 @@ POST_FIELDS = {
     "ai/confirm": ("allow_confidential", "job"),
     "ai/clear": (),
     "ai/reset": (),
+    "pin/set": ("current", "pin"),
+    "pin/unlock": ("pin",),
+    "pin/lock": (),
+    "pin/verify": ("action", "pin", "request"),
+    "pin/reset": ("confirm",),
+    "pin/settings": settings.SECURITY_KEYS,
+    "apptrash/restore": ("id",),
 }
+# Guarded routes also carry the single-use PIN confirmation (core/pin.py); it is checked and removed before the route runs.
+for _route in config.PIN_GUARDED:
+    POST_FIELDS[_route] = tuple(POST_FIELDS.get(_route, ())) + ("action_token",)
 SCAN_MODES = ("quick", "deep")
 _DRIVE_ONLY = re.compile(r"^[A-Za-z]:$")
 NOTHING_SELECTED = "Pick at least one drive or folder."

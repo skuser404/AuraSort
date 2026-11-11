@@ -118,6 +118,8 @@ SEL_ACTIONS.push({ html: () => S.view === 'corrupted' ? `<button class="btn sm g
 ACT['act-quarantine'] = async () => {
   const ids = Sel.ids(), st = await preflight(ids); if (!st) return;
   const r = await actionDialog('move', ids, 'Quarantine folder (inside your destination)', st, null); if (!r) return;
-  try { const x = await API.quarantine({ ids, allow_project: r.allow_project, allow_viewonly: r.allow_viewonly, verify: r.verify }); if (x.count) Stage.open({ n: x.count, by_cat: x.by_cat }, x.job, { mode: 'move', dest: x.dest, back: 'corrupted', fromSelection: true }) }
+  const body = { ids, allow_project: r.allow_project, allow_viewonly: r.allow_viewonly, verify: r.verify };
+  const clash = await resolveConflicts(Object.assign({ kind: 'quarantine' }, body)); if (clash === null) return;
+  try { const x = await API.quarantine(Object.assign(body, Object.keys(clash).length ? { conflicts: clash } : {})); if (x.count) Stage.open({ n: x.count, by_cat: x.by_cat }, x.job, { mode: 'move', dest: x.dest, back: 'corrupted', fromSelection: true }) }
   catch (e) { toastError(e) }
 };

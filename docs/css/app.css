@@ -174,6 +174,18 @@ button.chip:hover { border-color: var(--border-2); background: var(--surface-2) 
 [data-theme="dark"] .b-sorted { color: var(--accent-text) }
 .b-demo { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); background: var(--warn-soft) }
 .b-mut { color: var(--mut); border-color: var(--hair) }
+.b-err { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, transparent); background: var(--bad-soft) }
+.diag-list { margin-top: 14px }
+.diag-list .act small + small { display: block; margin-top: 2px; color: var(--txt) }
+.explain { margin-top: 16px; border-left: 3px solid var(--warn) }
+.explain h3 { margin: 0 0 4px; font-size: 15px }
+.explain + .explain { margin-top: 10px }
+.data-warn { border-left: 3px solid var(--warn) }
+.scan-explain { margin: 14px 0 }
+.scan-explain p { margin: 0 0 6px }
+.qpaths { margin-top: 8px }
+.qpaths summary { cursor: pointer }
+.qpaths ul { margin: 6px 0 0; padding-left: 18px; font-size: 13px }
 
 /* ---------- notes, empty, skeleton ---------- */
 .note { display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); font-size: 14px }
@@ -743,3 +755,50 @@ body.gated { overflow: hidden }
 .scan-fail .row { margin-top: 10px; gap: 8px; flex-wrap: wrap }
 .start-help { margin: 10px 0 0 }
 .pk-missing { margin: 10px 0 0; padding: 10px 12px; font-size: 13.5px }
+
+/* ---------- PIN lock: screens, prompt and the bear (docs/js/pin.js) ---------- */
+.pin-card { width: min(460px, 100%); text-align: center; margin-top: 4vh }
+.pin-card .seg { display: inline-flex }
+.pin-hero { display: flex; justify-content: center; margin: -6px 0 8px }
+.pin-hero.sm .pin-pal { width: 96px; height: 102px }
+.pin-facts { display: grid; gap: 6px; margin: 16px 0; text-align: left; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px }
+.pin-facts div { display: flex; justify-content: space-between; gap: 12px } .pin-facts dt { color: var(--mut) } .pin-facts dd { margin: 0; font-weight: 600; overflow-wrap: anywhere }
+.pin-lbl { display: block; text-align: left; font-weight: 600; margin: 12px 0 4px }
+.pin-in { width: 100%; height: 48px; font-size: 24px; letter-spacing: .5em; text-align: center; border-radius: 10px; border: 1px solid var(--border-2); background: var(--surface); font-variant-numeric: tabular-nums }
+.pin-in:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+.pin-show { justify-content: flex-start; margin: 10px 0 0; gap: 8px }
+.pin-msg { min-height: 22px; margin: 8px 0; font-size: 13px; text-align: left }
+.pin-msg.err { color: var(--bad) } .pin-msg.warn { color: var(--warn) }
+.pin-card .row { justify-content: center; gap: 10px }
+#pinbox { position: fixed; inset: 0; z-index: 90; display: flex; align-items: center; justify-content: center; padding: 20px; background: var(--scrim) }
+#pinbox[hidden] { display: none }
+.pin-ask { width: min(380px, 100%); padding: 22px; text-align: center }
+.pin-ask h2 { margin-bottom: 2px }
+.pin-pal { width: 140px; height: 149px; overflow: visible }
+.pin-pal .pp-ear, .pin-pal .pp-face { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2.5 }
+.pin-pal .pp-ear-in { fill: var(--accent); opacity: .35 }
+.pin-pal .pp-muzzle { fill: var(--card-solid); stroke: var(--accent); stroke-width: 1.5; opacity: .95 }
+.pin-pal .pp-white { fill: var(--card-solid); stroke: var(--txt); stroke-width: 1.5 }
+.pin-pal .pp-pupil { fill: var(--txt); transition: transform .18s var(--ease) }
+.pin-pal .pp-nose { fill: var(--txt) }
+.pin-pal .pp-mouth { fill: none; stroke: var(--txt); stroke-width: 2.2; stroke-linecap: round; transition: opacity .2s ease }
+.pin-pal .pp-smile { opacity: 0 } .pin-pal.is-happy .pp-smile { opacity: 1 } .pin-pal.is-happy .pp-flat { opacity: 0 }
+.pin-pal .pp-shut { fill: none; stroke: var(--txt); stroke-width: 2.2; stroke-linecap: round; opacity: 0 }
+.pin-pal .pp-paw rect { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2.5 }
+.pin-pal .pp-paw path { fill: none; stroke: var(--accent); stroke-width: 1.6; stroke-linecap: round }
+.pin-pal .pp-paw, .pin-pal .pp-head { transform-box: view-box; transition: transform .22s var(--ease) }
+.pin-pal .pp-head { transform-origin: 80px 90px }
+.pin-pal.is-cover .pp-paw-l { transform: translate(14px, -66px) } .pin-pal.is-cover .pp-paw-r { transform: translate(-14px, -66px) }
+.pin-pal.is-peek .pp-paw-l { transform: translate(2px, -60px) rotate(-8deg) } .pin-pal.is-peek .pp-paw-r { transform: translate(-2px, -60px) rotate(8deg) }
+.pin-pal.is-happy .pp-head { transform: translateY(-3px) }
+.pin-pal.is-shake .pp-head { animation: pinShake .5s ease }
+@keyframes pinShake { 0%, 100% { transform: rotate(0) } 20% { transform: rotate(-9deg) } 40% { transform: rotate(8deg) } 60% { transform: rotate(-6deg) } 80% { transform: rotate(4deg) } }
+@media (prefers-reduced-motion: reduce) {
+  .pin-pal .pp-paw, .pin-pal .pp-head, .pin-pal .pp-pupil, .pin-pal .pp-mouth { transition: none }
+  .pin-pal.is-shake .pp-head { animation: none }
+  .pin-pal.is-cover .pp-paw-l, .pin-pal.is-cover .pp-paw-r, .pin-pal.is-peek .pp-paw-l, .pin-pal.is-peek .pp-paw-r { transform: none }   /* paws stay down */
+  .pin-pal.is-cover .pp-white, .pin-pal.is-cover .pp-pupil { opacity: 0 } .pin-pal.is-cover .pp-shut { opacity: 1 }                       /* eyes simply closed */
+}
+@media (max-width: 520px) { .pin-in { font-size: 20px; letter-spacing: .35em } .pin-card { margin-top: 0 } }
+.clash-tbl { max-height: 46vh; overflow: auto; margin-top: 12px }
+.clash-tbl select { min-width: 130px }

@@ -6,15 +6,17 @@ from pathlib import Path
 # ---------------- product ----------------
 APP_NAME = "AuraSort"
 APP_SLUG = "aurasort"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.1.0"
 TAGLINE = "Make your files easier."
 SUBLINE = "Scan your whole PC, find anything fast, and sort files safely."
 
 # ---------------- platform ----------------
 WIN = os.name == "nt"
 MAC = sys.platform == "darwin"
-LINUX = sys.platform.startswith("linux")
-PLATFORM = "windows" if WIN else "mac" if MAC else "linux"
+# Termux on Android reports "linux"; CPython's own Android build reports "android". Both have no Recycle Bin.
+ANDROID = sys.platform == "android" or (sys.platform.startswith("linux") and ("ANDROID_ROOT" in os.environ or "com.termux" in os.environ.get("PREFIX", "")))
+LINUX = sys.platform.startswith("linux") or ANDROID
+PLATFORM = "windows" if WIN else "mac" if MAC else "android" if ANDROID else "linux"
 
 # ---------------- network (local only) ----------------
 BIND_HOST = "127.0.0.1"            # loopback only: the server refuses any other address
@@ -31,6 +33,7 @@ SIG_HEX_CHARS = 32                 # truncated HMAC length in signed URLs
 RATE_LIMITS = {                    # endpoint -> (max calls, per seconds)
     "scan": (4, 10), "estimate": (4, 10), "execute": (6, 10), "trash": (6, 10), "open": (20, 10),
     "integrity": (4, 10), "duplicates": (4, 10), "mkdir": (20, 10), "undo": (6, 10), "ai": (10, 10),
+    "pin": (12, 10), "diagnostics": (3, 10),
 }
 
 # ---------------- local data (user-only permissions) ----------------
@@ -62,7 +65,44 @@ SCAN_MAX_ROOTS = 200               # drives + folders in one scan request
 SCAN_SKIP_REASONS = {              # why an item was left out of a scan (counted, shown, never fatal)
     "no_access": "no permission", "vanished": "removed during the scan", "unreadable": "could not be read",
     "bad_name": "name the index cannot store", "missing_root": "folder not found", "error": "unexpected problem (see the log)",
+    "link": "links or junctions to other places (skipped to avoid loops)", "hidden": "hidden folders",
+    "protected": "system or tool folders (protected)", "system_file": "system files such as Thumbs.db and desktop.ini",
+    "skip_list": "folders you chose to skip",
 }
+SCAN_NOTES = {                     # files that WERE counted but are special (shown so numbers are never a mystery)
+    "online_only": "online-only (OneDrive/iCloud): listed, never downloaded", "partial": "unfinished downloads",
+    "project": "inside project folders (left alone when sorting)", "other_ext": "unknown extensions (listed under Other)",
+}
+# ---------------- PIN lock ----------------
+PIN_FILE_NAME = "pin.json"         # salt + slow hash + failed-attempt counter; never the PIN itself
+PIN_SCRYPT_N = 2 ** 15             # scrypt cost (32 MB, roughly 0.1 s per check on a normal PC)
+PIN_PBKDF2_ITERATIONS = 600_000    # fallback where Python has no scrypt (OWASP 2023 minimum for PBKDF2-HMAC-SHA256)
+PIN_FREE_TRIES = 5                 # wrong PINs before the first wait
+PIN_LOCKOUT_S = (30, 60, 300, 900) # then 30 s, 1 min, 5 min, 15 min (and 15 min for every further miss); kept across restarts
+PIN_ACTION_TOKEN_S = 60            # a PIN confirmation is valid this long, for one request only
+PIN_IDLE_MIN_DEFAULT = 10          # lock after this many minutes without activity
+PIN_IDLE_CHOICES_MIN = (1, 5, 10, 15, 30, 60)
+PIN_REMEMBER_CHOICES_MIN = (0, 1, 5, 15)   # "do not ask again for N minutes" (0 = ask every time, the default)
+# Guarded routes -> the action a PIN confirmation is issued for (server.py checks the token before the route runs).
+PIN_GUARDED = {"execute": "transfer", "trash": "trash", "undo": "undo", "quarantine": "transfer", "data/delete": "delete_data",
+               "interrupted/resume": "transfer", "interrupted/clean": "trash", "ai/key": "ai_key", "ai/reset": "ai_key",
+               "apptrash/restore": "undo", "pin/settings": "settings"}
+PIN_ACTIONS = frozenset(PIN_GUARDED.values())
+# Routes that work while locked (or before a PIN exists): start-up facts, the PIN screens themselves.
+PIN_OPEN_ROUTES = ("info", "pin/status", "pin/set", "pin/unlock", "pin/reset", "pin/lock")
+
+# ---------------- app-managed trash (where the OS has none: Android; and for "Replace") ----------------
+APPTRASH_DIR_NAME = ".AuraSortTrash"   # on the same drive as the file, so a "delete" is an instant rename, never a copy
+APPTRASH_INDEX = "apptrash.json"       # in the data folder: what is where, for Restore
+APPTRASH_PURGE_CHOICES_DAYS = (0, 30, 60, 90)   # 0 = never erase (the default). The only thing that ever deletes for good.
+
+# ---------------- name clashes in the destination ----------------
+CONFLICT_PREVIEW_MAX = 500         # clashes listed side by side in the dialog (the rest are counted)
+CONFLICT_COMPARE_MAX_BYTES = 1024 ** 3   # the preview compares up to 1 GB of same-size files byte by byte
+CONFLICT_PER_FILE_MAX = 200000     # per-file choices accepted in one request
+
+DOCTOR_TEST_SCAN_S = 3.0           # the --doctor test scan stops after this long
+DOCTOR_TEST_SCAN_MAX_FILES = 20000
 SCHEMA_STRICT_ENV = "AURASORT_STRICT_SCHEMA"   # tests set this: unknown request fields are refused instead of logged
 SCAN_STATUS_RECENT_DIRS = 6        # folder paths shown in the live ticker
 ESTIMATE_BENCH_SECONDS = 2.5       # files/second benchmark before a scan

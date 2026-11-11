@@ -11,12 +11,14 @@ async function call(path, body) { // Why: every request carries the per-run toke
       body: body ? JSON.stringify(body) : undefined });
   } catch (e) { throw new Error('offline') }
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw apiError(j, r, path);
+  if (!r.ok) { const e = apiError(j, r, path); if (r.status === 423 && typeof Pin !== 'undefined' && !/^pin\//.test(path)) Pin.onLocked(); throw e }
   return j;
 }
 function apiError(j, r, path) { // Why: the server answers {error, code, hint}; keep all three (and the step) for friendly text and "Copy details"
   const e = new Error(j.error || r.statusText || 'Request failed');
   e.code = j.code || ''; e.hint = j.hint || ''; e.status = r.status; e.step = 'request ' + String(path).split('?')[0];
+  if (j.retry_after != null) e.retry_after = j.retry_after;   // PIN lockout countdown
+  if (j.attempts_left != null) e.attempts_left = j.attempts_left;
   return e;
 }
 function friendly(e) { // Why: plain-English errors; no stack traces, exception names or paths
@@ -28,27 +30,30 @@ function friendly(e) { // Why: plain-English errors; no stack traces, exception 
   return m ? m.charAt(0).toUpperCase() + m.slice(1) : 'Something went wrong.';
 }
 const RealApi = {
-  info: () => call('info'), drives: () => call('drives'), browse: p => call('browse?' + qs({ path: p })),
+  info: () => call('info'), diagnostics: scan => call('diagnostics?' + qs({ scan: scan ? 1 : 0 })), drives: () => call('drives'), browse: p => call('browse?' + qs({ path: p })),
   settings: () => call('settings'), saveSettings: d => call('settings', d),
   estimate: b => call('scan/estimate', b), scanStart: b => call('scan/start', b), scanControl: action => call('scan/control', { action }), scanStatus: () => call('scan/status'),
   summary: () => call('summary'), files: p => call('files?' + qs(p)), fileIds: p => call('files/ids?' + qs(p)), rows: ids => call('rows', { ids }),
   extensions: () => call('extensions'), folders: p => call('folders?' + qs(p)), include: b => call('folders/include', b),
   thumb: () => '',   // real thumbnails use the signed link the server puts on each row (r.thumb)
   reveal: id => call('reveal', { id }), revealJob: job => call('reveal', { job }), disk: p => call('disk?' + qs({ path: p })),
-  plan: b => call('plan', b), execute: b => call('execute', b), job: id => call('job?' + qs({ id })),
-  history: limit => call('history?' + qs({ limit })), undo: id => call('undo', { id }), snapshots: p => call('snapshots?' + qs(p)),
+  plan: b => call('plan', b), execute: b => guarded('transfer', 'execute', b), job: id => call('job?' + qs({ id })), conflicts: b => call('conflicts', b),
+  history: limit => call('history?' + qs({ limit })), undo: id => guarded('undo', 'undo', { id }), snapshots: p => call('snapshots?' + qs(p)),
   preview: id => call('preview?' + qs({ id })), openFile: (id, macro_ok) => call('open', { id, macro_ok: !!macro_ok }),
   calendar: p => call('calendar?' + qs(p)), timeline: p => call('timeline?' + qs(p)),
-  selection: ids => call('selection', { ids }), trash: b => call('trash', b), mkdir: (parent, name) => call('mkdir', { parent, name }),
+  selection: ids => call('selection', { ids }), trash: b => guarded('trash', 'trash', b), mkdir: (parent, name) => call('mkdir', { parent, name }),
   openTrash: () => call('open-trash', {}), historyItem: id => call('history/item?' + qs({ id })), jobControl: (id, action) => call('job/control', { id, action }),
-  aiStatus: () => call('ai/status'), aiSettings: b => call('ai/settings', b), aiKey: b => call('ai/key', b), aiTest: b => call('ai/test', b), aiStartEngine: () => call('ai/engine/start', {}),
+  aiStatus: () => call('ai/status'), aiSettings: b => call('ai/settings', b), aiKey: b => guarded('ai_key', 'ai/key', b), aiTest: b => call('ai/test', b), aiStartEngine: () => call('ai/engine/start', {}),
   aiPull: model => call('ai/pull', { model }), aiStart: b => call('ai/start', b), aiConfirm: (job, allow_confidential) => call('ai/confirm', { job, allow_confidential }),
   integrityStart: b => call('integrity/start', b), integrityResults: p => call('integrity/results?' + qs(p)), duplicatesStart: () => call('duplicates/start', {}),
   duplicatesResults: p => call('duplicates/results?' + qs(p)), duplicatesExtras: () => call('duplicates/extras'), cleanup: p => call('cleanup?' + qs(p)),
-  cleanupIds: p => call('cleanup/ids?' + qs(p)), quarantine: b => call('quarantine', b),
-  interrupted: () => call('interrupted'), resume: id => call('interrupted/resume', { id }), cleanInterrupted: id => call('interrupted/clean', { id }),
-  deleteData: () => call('data/delete', { confirm: 'DELETE' }),
-  aiClear: () => call('ai/clear', {}), aiReset: () => call('ai/reset', {}), aiResults: p => call('ai/results?' + qs(p)), aiIds: p => call('ai/ids?' + qs(p))
+  cleanupIds: p => call('cleanup/ids?' + qs(p)), quarantine: b => guarded('transfer', 'quarantine', b),
+  interrupted: () => call('interrupted'), resume: id => guarded('transfer', 'interrupted/resume', { id }), cleanInterrupted: id => guarded('trash', 'interrupted/clean', { id }),
+  deleteData: () => guarded('delete_data', 'data/delete', { confirm: 'DELETE' }),
+  pinStatus: () => call('pin/status'), pinSet: b => call('pin/set', b), pinUnlock: b => call('pin/unlock', b), pinLock: () => call('pin/lock', {}),
+  pinVerify: b => call('pin/verify', b), pinReset: () => call('pin/reset', { confirm: 'RESET' }), pinSettings: b => guarded('settings', 'pin/settings', b),
+  appTrash: () => call('apptrash'), appTrashRestore: id => guarded('undo', 'apptrash/restore', { id }),
+  aiClear: () => call('ai/clear', {}), aiReset: () => guarded('ai_key', 'ai/reset', {}), aiResults: p => call('ai/results?' + qs(p)), aiIds: p => call('ai/ids?' + qs(p))
 };
 const API = DEMO ? DemoApi : RealApi;
 

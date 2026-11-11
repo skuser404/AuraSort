@@ -13,7 +13,7 @@ from pathlib import Path
 from . import config
 from .log import log
 
-WIN, MAC = config.WIN, config.MAC
+WIN, MAC, ANDROID = config.WIN, config.MAC, config.ANDROID
 DRIVE_INFO_TIMEOUT_S = 2.5        # a dead network drive must not freeze the drive list
 SUBPROCESS_TIMEOUT_S = 5
 
@@ -24,29 +24,73 @@ if WIN:
 # Windows GetDriveTypeW results
 _WIN_DRIVE_TYPES = {2: "removable", 3: "internal", 4: "network", 5: "optical", 6: "ram"}
 _WIN_EXTERNAL_BUSES = {4, 7, 12, 13}   # 1394, USB, SD, MMC (STORAGE_BUS_TYPE)
-_KNOWN_FOLDERS = {  # Windows FOLDERIDs, so OneDrive-redirected folders are found
+_KNOWN_FOLDERS = {  # Windows FOLDERIDs, so OneDrive-redirected or moved folders are found
     "Downloads": "{374DE290-123F-4565-9164-39C4925E467B}", "Documents": "{FDD39AD0-238F-46AF-ADB4-6C85480369C7}",
     "Desktop": "{B4BFCC3A-DB2C-424C-B029-7FE99A87C641}", "Pictures": "{33E28130-4E1E-4676-835A-98395C3BC3BB}",
     "Videos": "{18989B1D-99B5-455B-841C-AB7C74E4DDFC}", "Music": "{4BD8D571-6D19-48D3-BE97-422220080E43}",
 }
+_FOLDERID_PROFILE = "{5E6C858F-0E22-4760-9AFE-EA3317B67173}"
 QUICK_NAMES = ("Downloads", "Documents", "Desktop", "Pictures", "Movies" if MAC else "Videos", "Music")
+_XDG_KEYS = {"Downloads": "XDG_DOWNLOAD_DIR", "Documents": "XDG_DOCUMENTS_DIR", "Desktop": "XDG_DESKTOP_DIR",
+             "Pictures": "XDG_PICTURES_DIR", "Videos": "XDG_VIDEOS_DIR", "Music": "XDG_MUSIC_DIR"}
+ANDROID_STORAGE = "/storage/emulated/0"   # the phone's shared storage (Termux also sees it as /sdcard and ~/storage/shared)
+_ANDROID_QUICK = (("Downloads", "Download"), ("Documents", "Documents"), ("Camera", "DCIM"), ("Pictures", "Pictures"),
+                  ("Videos", "Movies"), ("Music", "Music"))
+
+# Windows reparse points. Only "name surrogates" (symlinks, junctions, mount points) point somewhere else; OneDrive/iCloud
+# placeholders, deduplicated files and app links are reparse points too, but they ARE the file and must be listed.
+REPARSE_ATTR = 0x400
+NAME_SURROGATE_BIT = 0x20000000
+CLOUD_TAG_MASK, CLOUD_TAG = 0xFFFF0FFF, 0x9000001A   # IO_REPARSE_TAG_CLOUD and CLOUD_1..CLOUD_F (OneDrive Files On-Demand)
+LONG_PATH_AT = 240                 # longer Windows paths get the \\?\ prefix (MAX_PATH is 260 without long-path support)
 
 
 # ---------------- known folders ----------------
 def _win_known_folder(guid):
-    """Why: Desktop/Documents may live in OneDrive; SHGetKnownFolderPath returns the real location."""
+    """Why: Desktop/Documents may live in OneDrive or on another drive; SHGetKnownFolderPath returns the real location."""
     class GUID(ctypes.Structure):
         _fields_ = [("Data1", wintypes.DWORD), ("Data2", wintypes.WORD), ("Data3", wintypes.WORD), ("Data4", ctypes.c_ubyte * 8)]
     g = GUID()
-    ctypes.oledll.ole32.CLSIDFromString(guid, ctypes.byref(g))
     out = ctypes.c_wchar_p()
     try:
+        ctypes.oledll.ole32.CLSIDFromString(guid, ctypes.byref(g))
         ctypes.windll.shell32.SHGetKnownFolderPath(ctypes.byref(g), 0, None, ctypes.byref(out))
         return out.value
     except OSError:
         return None
     finally:
         ctypes.windll.ole32.CoTaskMemFree(out)
+
+
+def _same(a, b):
+    try:
+        return os.path.normcase(os.path.abspath(str(a))) == os.path.normcase(os.path.abspath(str(b)))
+    except (TypeError, ValueError):
+        return False
+
+
+def _onedrive_roots():
+    """Why: OneDrive sets these variables to its folders; a quick folder inside one is 'in OneDrive'."""
+    return [os.environ[k] for k in ("OneDrive", "OneDriveConsumer", "OneDriveCommercial") if os.environ.get(k)]
+
+
+def _xdg_user_dirs(home):
+    """Why: Linux desktops may rename Downloads etc. (other languages, other places); ~/.config/user-dirs.dirs says where."""
+    out = {}
+    cfg = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.join(str(home), ".config"), "user-dirs.dirs")
+    if not _same(home, os.path.expanduser("~")):
+        cfg = os.path.join(str(home), ".config", "user-dirs.dirs")   # a custom HOME (tests) reads its own file only
+    try:
+        with open(cfg, encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                k, _, v = line.strip().partition("=")
+                if k.startswith("XDG_") and v:
+                    v = v.strip().strip('"').replace("$HOME", str(home))
+                    if os.path.isabs(v) and not _same(v, home):   # XDG uses $HOME itself for "not set"
+                        out[k] = v
+    except OSError:
+        pass
+    return out
 
 
 def within(child, parent):
@@ -59,16 +103,30 @@ def within(child, parent):
 
 
 def quick_folders():
-    """Why: Quick Scan covers the usual user folders (Downloads, Documents, Desktop, Pictures, Videos/Movies, Music)."""
+    """Why: Quick Scan covers the usual user folders, found where the OS really keeps them (never just assumed to be
+    ~/Downloads): Windows Known Folders (OneDrive-redirected or moved to another drive), XDG user dirs on Linux, the
+    phone's shared storage on Android. Each entry says where its path came from and whether it is in OneDrive."""
+    home = config.HOME
+    if ANDROID:
+        root = ANDROID_STORAGE if os.path.isdir(ANDROID_STORAGE) else str(home)
+        return [dict(name=n, path=os.path.join(root, d), exists=os.path.isdir(os.path.join(root, d)), source="android", onedrive=False)
+                for n, d in _ANDROID_QUICK]
+    real_profile = _win_known_folder(_FOLDERID_PROFILE) if WIN else None
+    # The Known Folder API answers for the signed-in user. With a custom HOME (tests, fixtures) only answers inside it count.
+    trust_os = WIN and real_profile and _same(real_profile, home)
+    xdg = _xdg_user_dirs(home) if config.LINUX else {}
     out = []
     for name in QUICK_NAMES:
-        path = None
+        path, source = None, "default"
         if WIN and name in _KNOWN_FOLDERS:
             kf = _win_known_folder(_KNOWN_FOLDERS[name])
-            if kf and within(kf, config.HOME):  # honour a custom HOME (tests) instead of the real profile
-                path = kf
-        path = path or str(config.HOME / name)
-        out.append(dict(name=name, path=path, exists=os.path.isdir(path)))
+            if kf and (trust_os or within(kf, home)):
+                path, source = kf, "windows"
+        elif config.LINUX and _XDG_KEYS.get(name) in xdg:
+            path, source = xdg[_XDG_KEYS[name]], "xdg"
+        path = path or str(home / name)
+        out.append(dict(name=name, path=path, exists=os.path.isdir(path), source=source,
+                        onedrive=any(within(path, r) for r in _onedrive_roots())))
     return out
 
 
@@ -279,8 +337,27 @@ PYTHON_VERSION = ".".join(str(n) for n in sys.version_info[:3])
 DRIVE_BLANK = dict(id="", root="", name="Drive", type="unknown", fs="", ready=False, recycle_bin=False, total=0, used=0, free=0)
 
 
+def _android_roots():
+    """Why: on Android the useful "drives" are the phone's shared storage and any SD card (/storage/XXXX-XXXX)."""
+    roots = [ANDROID_STORAGE] if os.path.isdir(ANDROID_STORAGE) else []
+    try:
+        roots += sorted(e.path for e in os.scandir("/storage") if e.name not in ("emulated", "self") and e.is_dir())
+    except OSError:
+        pass
+    return roots
+
+
+def _android_drive(root):
+    use = _usage(root)
+    name = "Phone storage" if root == ANDROID_STORAGE else f"SD card ({os.path.basename(root)})"
+    return dict(id=root, root=root, name=name, type="internal" if root == ANDROID_STORAGE else "removable", fs="",
+                ready=use is not None, recycle_bin=True, **(use or {}))
+
+
 def list_drives():
     """Why: the scan screen lists every drive; each probe has a timeout so an unplugged/dead drive can't hang the UI."""
+    if ANDROID:
+        return [{**DRIVE_BLANK, **_android_drive(r)} for r in _android_roots()]
     if WIN:
         jobs = [(_win_drive, (c,)) for c in _win_drives()]
     elif MAC:
@@ -322,6 +399,8 @@ def list_mount_points():
         return _mac_mounts()
     if WIN:
         return [f"{c}:\\" for c in _win_drives()]
+    if ANDROID:
+        return ["/"] + _android_roots()
     return [m for _, m, _ in _linux_mounts()]
 
 
@@ -346,11 +425,35 @@ def created_time(st):
 
 
 def is_reparse_or_link(entry_stat):
-    """Why: symlinks and Windows junctions can create scan loops or escape a folder, so they are skipped."""
+    """Why: symlinks and Windows junctions can create scan loops or escape a folder, so they are skipped. Other reparse
+    points (OneDrive/iCloud placeholders, deduplicated files) are the real file: skipping those made whole OneDrive
+    folders look empty."""
     if stat.S_ISLNK(entry_stat.st_mode):
         return True
     attrs = getattr(entry_stat, "st_file_attributes", 0)
-    return bool(attrs & 0x400)  # FILE_ATTRIBUTE_REPARSE_POINT
+    if not attrs & REPARSE_ATTR:
+        return False
+    tag = getattr(entry_stat, "st_reparse_tag", 0)
+    return not tag or bool(tag & NAME_SURROGATE_BIT)   # unknown tag: treated as a link (the safe side)
+
+
+def is_cloud_reparse(entry_stat):
+    """Why: a OneDrive Files On-Demand placeholder (synced or online-only) carries a cloud reparse tag."""
+    tag = getattr(entry_stat, "st_reparse_tag", 0)
+    return bool(getattr(entry_stat, "st_file_attributes", 0) & REPARSE_ATTR and (tag & CLOUD_TAG_MASK) == CLOUD_TAG)
+
+
+def is_online_only(entry_stat):
+    """Why: reading an online-only file makes OneDrive/iCloud download it, so such files are listed from metadata only."""
+    return bool(getattr(entry_stat, "st_file_attributes", 0) & config.CLOUD_ATTRS or getattr(entry_stat, "st_flags", 0) & config.MAC_DATALESS)
+
+
+def long_path(path):
+    """Why: Windows refuses paths over 260 characters unless long paths are enabled; the \\\\?\\ prefix lifts that limit."""
+    if not WIN or len(path) < LONG_PATH_AT or path.startswith("\\\\?\\"):
+        return path
+    path = os.path.abspath(path)
+    return "\\\\?\\UNC\\" + path[2:] if path.startswith("\\\\") else "\\\\?\\" + path
 
 
 def is_hidden_system(entry_stat):
@@ -395,6 +498,15 @@ def open_folder(path):
         _spawn(["xdg-open", path])
 
 
+def open_url(url):
+    """Why: the start-up page opens in the browser; Termux has no desktop browser hook, so it uses termux-open-url."""
+    if ANDROID and shutil.which("termux-open-url"):
+        _spawn(["termux-open-url", url])
+        return
+    import webbrowser
+    webbrowser.open(url)
+
+
 def open_trash():
     """Why: after deleting, the summary offers 'Open Recycle Bin' so files can be restored."""
     if WIN:
@@ -422,6 +534,23 @@ def user_display_name():
         return ""
 
 
+def device_name():
+    """Why: the unlock screen names the computer ("Asked on LAPTOP-7F2"), so a PIN prompt on the wrong device is obvious."""
+    try:
+        import socket
+        return socket.gethostname() or "this computer"
+    except OSError:
+        return "this computer"
+
+
+def os_user():
+    """Why: the OS account AuraSort runs as (the PIN protects AuraSort inside this account, not the account itself)."""
+    try:
+        return getpass.getuser()
+    except (OSError, KeyError, ImportError):
+        return ""
+
+
 def is_admin():
     """Why: running as Administrator/root widens what a mistake could touch, so we warn."""
     if WIN:
@@ -430,6 +559,23 @@ def is_admin():
         except (OSError, AttributeError):
             return False
     return hasattr(os, "geteuid") and os.geteuid() == 0
+
+
+REPLACE_RETRIES = 40          # x 25 ms: Windows refuses to replace a file another thread is reading at that moment
+
+
+def replace_file(tmp, dst):
+    """Why: the atomic "write a temp file, then swap it in" step. On Windows os.replace fails with WinError 5 while another
+    thread has the target open for reading; that lasts milliseconds, so it is retried instead of failing the request."""
+    import time
+    for i in range(REPLACE_RETRIES):
+        try:
+            os.replace(tmp, dst)
+            return
+        except PermissionError:
+            if not WIN or i == REPLACE_RETRIES - 1:
+                raise
+            time.sleep(0.025)
 
 
 def make_private(path, is_dir=None):

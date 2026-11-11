@@ -36,7 +36,7 @@ and orientation. We act in ways that contribute to an open, welcoming, diverse, 
 ## Enforcement
 The maintainer (Sunil Kumar, GitHub: skuser404) clarifies and enforces these standards and may remove, edit or reject
 comments, commits, code, issues and other contributions that do not follow them. Report problems privately through
-[GitHub Security Advisories](https://github.com/skuser404/aurasort/security/advisories/new) (mark the report as a
+[GitHub Security Advisories](https://github.com/skuser404/AuraSort/security/advisories/new) (mark the report as a
 conduct report) or by contacting the maintainer on GitHub. All reports are reviewed promptly and confidentially.
 
 Possible responses, depending on the impact: a private written warning, a temporary ban from interaction, or a permanent

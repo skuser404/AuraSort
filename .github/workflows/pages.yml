@@ -1,8 +1,10 @@
-name: Pages (demo)
+name: Pages (website + demo)
+# https://skuser404.github.io/AuraSort/        the website (site/): what AuraSort is, install commands, search-engine tags
+# https://skuser404.github.io/AuraSort/demo/   the app itself in demo mode (docs/), with made-up files only
 on:
   push:
     branches: [main]
-    paths: ["docs/**", "*.md", "LICENSE"]
+    paths: ["docs/**", "site/**", "*.md", "LICENSE"]
   workflow_dispatch:
 
 permissions:
@@ -26,11 +28,18 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Copy the legal documents into the demo (same files, shown offline)
-        run: mkdir -p docs/legal && cp TERMS_OF_USE.md ACCEPTABLE_USE.md PRIVACY_POLICY.md AI_DATA_NOTICE.md THIRD_PARTY_NOTICES.md CODE_OF_CONDUCT.md LICENSE docs/legal/
+      - name: Assemble the site
+        run: |
+          mkdir -p _site/demo/legal
+          cp -R site/. _site/
+          cp -R docs/. _site/demo/
+          rm -f _site/demo/ARCHITECTURE.md _site/demo/THREAT_MODEL.md
+          # the same legal files, shown offline inside the demo
+          cp TERMS_OF_USE.md ACCEPTABLE_USE.md PRIVACY_POLICY.md AI_DATA_NOTICE.md THIRD_PARTY_NOTICES.md CODE_OF_CONDUCT.md LICENSE _site/demo/legal/
+          touch _site/.nojekyll
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
-          path: docs
+          path: _site
       - id: deployment
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

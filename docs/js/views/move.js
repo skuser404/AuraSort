@@ -62,8 +62,10 @@ async function startMove() {
       <p>Nothing is ever permanently deleted. ${m.mode === 'move' ? 'You can undo this from History.' : 'Originals stay where they are.'}</p>${p.project_files ? `<div class="note err">${ic('alert')}<div><b>${fmt(p.project_files)} files are inside project or asset folders you ticked.</b> Moving them can break those projects, apps or sites.</div></div>` : ''}`,
     check: p.project_files ? 'I understand the risk' : '' });
   if (!ok) return;
+  const body = { dest: m.dest, mode: m.mode, flat: m.flat, types: [...m.types], formats: [...m.formats], allow_project: !!p.project_files };
+  const clash = await resolveConflicts(body); if (clash === null) return;
   try {
-    const r = await API.execute({ dest: m.dest, mode: m.mode, flat: m.flat, types: [...m.types], formats: [...m.formats], allow_project: !!p.project_files });
+    const r = await API.execute(Object.assign(body, Object.keys(clash).length ? { conflicts: clash } : {}));
     if (r.blocked) toast(`${fmt(r.blocked)} protected or view-only files were left out.`);
     Stage.open(p, r.job, { mode: m.mode, dest: m.dest, predicted: predicted(m) });
   } catch (e) { toastError(e) }

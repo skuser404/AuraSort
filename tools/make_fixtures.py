@@ -19,7 +19,7 @@ from core import config  # noqa: E402
 from tests import fixtures as fx  # noqa: E402  (pure-Python file builders shared with the unit tests)
 
 try:
-    from PIL import Image, ImageDraw  # optional, pinned in requirements-optional.txt
+    from PIL import Image, ImageDraw  # optional, pinned in requirements.txt
 except ImportError:  # pragma: no cover
     Image = None
 

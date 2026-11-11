@@ -22,6 +22,7 @@ CATEGORIES = (
     ("Other", "", True),
 )
 CATEGORY_NAMES = tuple(c for c, _, _ in CATEGORIES)
+OTHER = "Other"   # the category for unknown extensions
 VIEW_ONLY = frozenset(c for c, _, v in CATEGORIES if v)
 MOVABLE = frozenset(CATEGORY_NAMES) - VIEW_ONLY
 EXT2CAT = {e: c for c, exts, _ in CATEGORIES for e in exts.split()}

@@ -22,7 +22,7 @@ def ram_bytes():
             st.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
             return int(st.ullTotalPhys) if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(st)) else 0
         if config.MAC:
-            out = subprocess.run(["sysctl", "-n", "hw.memsize"], capture_output=True, text=True, timeout=TIMEOUT_S, check=False)  # nosec B603 B607
+            out = subprocess.run(["sysctl", "-n", "hw.memsize"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=TIMEOUT_S, check=False)  # nosec B603 B607
             return int(out.stdout.strip() or 0)
         with open("/proc/meminfo", encoding="ascii") as fh:
             for line in fh:
@@ -39,7 +39,7 @@ def gpu():
     if not exe:
         return None
     try:
-        out = subprocess.run([exe, "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=TIMEOUT_S, check=False)  # nosec B603
+        out = subprocess.run([exe, "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=TIMEOUT_S, check=False)  # nosec B603
         name, mem = [x.strip() for x in out.stdout.splitlines()[0].split(",")[:2]]
         return dict(name=name, vram_mb=int(float(mem)))
     except (OSError, ValueError, IndexError, subprocess.SubprocessError):
