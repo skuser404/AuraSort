@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 560" font-family="Segoe UI, system-ui, sans-serif" font-size="13">
+  <rect width="960" height="560" fill="#ffffff"/>
+  <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#4b4a63"/></marker></defs>
+  <g fill="#f3f1ff" stroke="#6a5ae0" stroke-width="1.5">
+    <rect x="20" y="40" width="250" height="230" rx="12"/>
+    <rect x="330" y="40" width="300" height="480" rx="12"/>
+    <rect x="690" y="40" width="250" height="140" rx="12"/>
+    <rect x="690" y="210" width="250" height="140" rx="12"/>
+    <rect x="690" y="380" width="250" height="140" rx="12"/>
+  </g>
+  <g fill="#1d1b2e">
+    <text x="40" y="68" font-size="15" font-weight="700">Browser UI (docs/)</text>
+    <text x="40" y="94">index.html, css/, js/ (no build step)</text>
+    <text x="40" y="116">api.js: every call with the per-run</text>
+    <text x="40" y="134">token in a header (never in a URL)</text>
+    <text x="40" y="156">pin.js: PIN screens, action tokens</text>
+    <text x="40" y="178">mobile.js: drawer, tabs, error banner</text>
+    <text x="40" y="200">search-worker.js: fuzzy search</text>
+    <text x="40" y="222">demo.js: sample data (no server)</text>
+    <text x="40" y="250" fill="#5c5a70">CSP: no inline script or style</text>
+
+    <text x="350" y="68" font-size="15" font-weight="700">Local server (server.py + core/)</text>
+    <text x="350" y="92" fill="#5c5a70">listens on 127.0.0.1 only</text>
+    <text x="350" y="118">web.py: Host/Origin/token, PIN gate, JSON</text>
+    <text x="350" y="140">schema.py: request contract, 400 errors</text>
+    <text x="350" y="162">pin.py: scrypt hash, lockout, action tokens</text>
+    <text x="350" y="184">scanner.py: thread pool per drive, skip reasons</text>
+    <text x="350" y="206">index_db.py: SQLite (WAL), lists, summary</text>
+    <text x="350" y="228">safety.py: protected and project folders</text>
+    <text x="350" y="250">mover.py + copier.py: journal, verified copy</text>
+    <text x="350" y="272">conflicts.py: skip / keep both / replace</text>
+    <text x="350" y="294">trash.py + apptrash.py: Recycle Bin, own trash</text>
+    <text x="350" y="316">history.py: History and Undo manifests</text>
+    <text x="350" y="338">checks.py + integrity.py: duplicates, damage</text>
+    <text x="350" y="360">doctor.py: --doctor, --self-test</text>
+    <text x="350" y="382">docai.py, llm.py, sensitive.py: optional AI</text>
+    <text x="350" y="404">platform_utils.py: drives, known folders</text>
+    <text x="350" y="426">log.py: rotating log, secrets masked</text>
+    <text x="350" y="452" fill="#5c5a70">Python standard library only</text>
+    <text x="350" y="474" fill="#5c5a70">(Pillow, pypdf optional)</text>
+
+    <text x="710" y="68" font-size="15" font-weight="700">Your files</text>
+    <text x="710" y="94">read: names, sizes, dates (scan)</text>
+    <text x="710" y="116">moved/copied only after preview,</text>
+    <text x="710" y="138">confirmation and the PIN</text>
+    <text x="710" y="160" fill="#5c5a70">OneDrive online-only: never read</text>
+
+    <text x="710" y="238" font-size="15" font-weight="700">~/.aurasort (user-only)</text>
+    <text x="710" y="264">index.sqlite3, settings.json</text>
+    <text x="710" y="286">history/*.json, pin.json</text>
+    <text x="710" y="308">logs/server.log, thumbs/</text>
+    <text x="710" y="330" fill="#5c5a70">apptrash.json</text>
+
+    <text x="710" y="408" font-size="15" font-weight="700">Deletes (never permanent)</text>
+    <text x="710" y="434">Recycle Bin / Trash (OS)</text>
+    <text x="710" y="456">.AuraSortTrash on the same drive</text>
+    <text x="710" y="478">(Android, and files kept by Replace)</text>
+  </g>
+  <g stroke="#4b4a63" stroke-width="2" fill="none" marker-end="url(#a)">
+    <path d="M270 140 H325"/><path d="M330 170 H275"/>
+    <path d="M630 110 H685"/><path d="M630 280 H685"/><path d="M630 450 H685"/>
+  </g>
+  <g fill="#4b4a63" font-size="12">
+    <text x="276" y="132">HTTP</text><text x="274" y="188">JSON</text>
+  </g>
+</svg>
