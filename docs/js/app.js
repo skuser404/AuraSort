@@ -102,13 +102,16 @@ addEventListener('popstate', () => { // Why: Back/Forward restore the previous v
   try { [S.info, S.settings, S.drives] = await Promise.all([API.info(), API.settings(), API.drives()]) }
   catch (e) { S.offline = true; S.info = { quick: [], user: '' }; S.settings = {}; S.drives = []; toastError(e) }
   renderUser(); renderFooter();
-  if (S.info && S.info.admin) toast('Running as Administrator/root. Close it and run it as a normal user unless you really need to.', 'err');
+  if (S.info && S.info.admin && S.info.os !== 'windows') toast('Running as root. AuraSort does not need it; start it as your normal user.', 'err');
   await refreshIndex();
   let st = null; try { st = await API.scanStatus() } catch (e) { st = null }
   if (st && ['running', 'paused'].includes(st.state)) { S.scan = st; S.view = 'scan'; if (p.has) S.pending = p; render(); pollScan(); return }
   if (S.hasIndex) applyParams(p.has ? p : { formats: [] });
   else if (p.has && !['scan', 'history', 'settings', 'help'].includes(p.view)) { S.pending = p; S.view = 'scan' }
   else S.view = p.view || 'dashboard';
+  if (!DEMO && S.info && S.info.auto_scan && !S.hasIndex && !p.has) {   // first start: scan the usual folders, no clicks needed
+    S.view = 'scan'; render(false); const st = scanSetup(); st.mode = 'quick'; startScan(); return;
+  }
   render(false); syncSearchBox();
   if (S.hasIndex) syncURL('replace');
   if (DEMO && S.pending) { S.setup = null; scanSetup(); startScan() }   // demo: a shared link opens straight into its state

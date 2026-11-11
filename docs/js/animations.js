@@ -1,14 +1,11 @@
 /* AuraSort - count-ups, ring/gauge animation and the cinematic move stage (real files, real numbers). */
 'use strict';
-function countUps(root) { // Why: numbers count up to their real value (instant with reduced motion)
+function countUps(root) { // Why: real numbers, shown at once (counting animations only decorate)
   $$('[data-count]', root).forEach(el => {
     const to = Number(el.dataset.count), f = el.dataset.f === 'sz' ? sz : el.dataset.f === 'pct' ? (n => Math.round(n) + '%') : fmt;
-    if (!motion() || !isFinite(to)) { el.textContent = f(to); return }
-    const t0 = performance.now(), D = 250;
-    const step = n => { const k = Math.min(1, (n - t0) / D); el.textContent = f(to * easeOut(k)); if (k < 1 && el.isConnected) requestAnimationFrame(step) };
-    requestAnimationFrame(step);
+    el.textContent = f(to);
   });
-  $$('[data-to]', root).forEach(el => { const go = () => { el.style.strokeDashoffset = el.dataset.to }; if (!motion()) go(); else requestAnimationFrame(() => requestAnimationFrame(go)) });
+  $$('[data-to]', root).forEach(el => { el.style.strokeDashoffset = el.dataset.to });
 }
 const ringSvg = (cls, id, to = 100) => `<svg class="${cls}" viewBox="0 0 120 120" aria-hidden="true"><circle class="trk" cx="60" cy="60" r="52"/><circle class="val" ${id ? `id="${id}"` : ''} cx="60" cy="60" r="52" pathLength="100" stroke-dasharray="100" stroke-dashoffset="100" data-to="${to}"/></svg>`;
 
@@ -34,8 +31,8 @@ const Stage = {
     this.V = {};
     this.used.forEach(c => { const el = $(`.vault[data-k="${CSS.escape(c.key)}"]`); this.V[c.key] = { el, ring: el.querySelector('.val'), n: el.querySelector('.v-n'), s: el.querySelector('.v-s'), total: plan.by_cat[c.key].n, shown: 0, hitAt: 0 } });
     st.hidden = false; document.body.style.overflow = 'hidden'; requestAnimationFrame(() => st.classList.add('in'));
-    this.initFx(); this.initPool(); this.measure();
-    this.onResize = () => { this.sizeFx(); this.measure() }; addEventListener('resize', this.onResize);
+    this.initPool(); this.measure();
+    this.onResize = () => this.measure(); addEventListener('resize', this.onResize);
     this.onVis = () => { this.hiddenTab = document.hidden; if (!this.hiddenTab && this.alive && !this.finished) this.raf = requestAnimationFrame(t => this.frame(t)) };
     document.addEventListener('visibilitychange', this.onVis);
     this.poll(); this.raf = requestAnimationFrame(t => this.frame(t));
@@ -45,9 +42,6 @@ const Stage = {
     for (const k in this.V) { const r = this.V[k].el.querySelector('.v-ring').getBoundingClientRect(); this.V[k].x = r.left + r.width / 2; this.V[k].y = r.top + r.height / 2 }
     this.measuredAt = performance.now();
   },
-  initFx() { this.cv = $('#fx'); this.g = this.cv.getContext('2d'); this.sizeFx();
-    this.parts = motion() ? Array.from({ length: 48 }, () => ({ x: Math.random() * innerWidth, y: Math.random() * innerHeight, vx: rnd(-.08, .08), vy: rnd(-.25, -.05), r: rnd(.5, 1.8) })) : [] },
-  sizeFx() { const dpr = Math.min(2, devicePixelRatio || 1); this.cv.width = innerWidth * dpr; this.cv.height = innerHeight * dpr; this.g.setTransform(dpr, 0, 0, dpr, 0, 0) },
   initPool() {
     const box = $('#flyers'); box.innerHTML = Array.from({ length: POOL }, () => '<div class="fly"><div class="fc"><span class="fi"></span><img alt="" hidden></div><span class="fn"></span></div>').join('');
     this.pool = $$('.fly', box).map(el => { const img = el.querySelector('img'); img.onerror = () => { img.hidden = true }; return { el, img, fi: el.querySelector('.fi'), fn: el.querySelector('.fn'), busy: false, tr: [] } });
@@ -95,24 +89,17 @@ const Stage = {
     const src = DEMO ? API.thumb(x.id) : x.thumb;
     if (x.cat === 'Images' && src) { it.img.hidden = false; it.img.src = src } else { it.img.hidden = true; it.img.removeAttribute('src') }
     const a = Math.random() * 6.283, r = this.src.r * rnd(.1, .55);
-    Object.assign(it, { busy: true, t0: now, dur: rnd(950, 1350), x0: this.src.x + Math.cos(a) * r, y0: this.src.y + Math.sin(a) * r, x1: V.x, y1: V.y, rot: rnd(-18, 18), key: x.cat, tr: [], color: c.c });
+    Object.assign(it, { busy: true, t0: now, dur: rnd(950, 1350), x0: this.src.x + Math.cos(a) * r, y0: this.src.y + Math.sin(a) * r, x1: V.x, y1: V.y, rot: rnd(-18, 18), key: x.cat });
     it.cx = (it.x0 + it.x1) / 2 + rnd(-120, 120); it.cy = Math.min(it.y0, it.y1) - 60 - Math.abs(it.y1 - it.y0) * .25 - rnd(0, 60);
     return true;
   },
   frame(now) {
     if (!this.alive || this.hiddenTab) return;
-    const dt = Math.min(50, now - (this.prev || now)); this.prev = now; const j = this.job, g = this.g, W = innerWidth, H = innerHeight;
+    const dt = Math.min(50, now - (this.prev || now)); this.prev = now; const j = this.job;
     if (now - this.measuredAt > 1000) this.measure();
     this.tick(now);
     const gap = Math.max(18, 110 - this.queue.length * 4);
     while (this.queue.length && now - this.lastSpawn > gap) { if (!this.spawn(this.queue.shift(), now)) break; this.lastSpawn = now }
-    const fx = this.parts.length > 0;
-    if (fx) {
-      g.clearRect(0, 0, W, H);
-      g.fillStyle = currentTheme() === 'light' ? 'rgba(91,33,182,.22)' : 'rgba(196,181,253,.38)'; g.beginPath();
-      for (const p of this.parts) { p.x += p.vx * dt * .06; p.y += p.vy * dt * .06; if (p.y < -5) { p.y = H + 5; p.x = Math.random() * W } if (p.x < -5) p.x = W + 5; if (p.x > W + 5) p.x = -5; g.moveTo(p.x + p.r, p.y); g.arc(p.x, p.y, p.r, 0, 6.283) }
-      g.fill();
-    }
     let busy = 0;
     for (const it of this.pool) {
       if (!it.busy) continue; busy++;
@@ -121,8 +108,6 @@ const Stage = {
       const e = easeIO(u), k = 1 - e, x = k * k * it.x0 + 2 * k * e * it.cx + e * e * it.x1, y = k * k * it.y0 + 2 * k * e * it.cy + e * e * it.y1;
       it.el.style.transform = `translate3d(${x.toFixed(1)}px,${y.toFixed(1)}px,0) translate(-50%,-50%) scale(${(1 - .62 * e).toFixed(3)}) rotate(${(it.rot * (1 - e)).toFixed(1)}deg)`;
       it.el.style.opacity = u < .08 ? u / .08 : u > .86 ? (1 - u) / .14 : 1;
-      if (fx) { const tr = it.tr; tr.push(x, y); if (tr.length > 12) tr.splice(0, 2); g.strokeStyle = it.color; g.lineWidth = 2 * (1 - e * .5);
-        for (let q = 2; q < tr.length; q += 2) { g.globalAlpha = (q / tr.length) * .55; g.beginPath(); g.moveTo(tr[q - 2], tr[q - 1]); g.lineTo(tr[q], tr[q + 1]); g.stroke() } g.globalAlpha = 1 }
     }
     const kk = Math.min(1, dt / 160), D = this.disp;
     D.done += ((j.done || 0) - D.done) * kk; D.bytes += ((j.bytes || 0) - D.bytes) * kk;
@@ -134,7 +119,7 @@ const Stage = {
       const p = Math.min(100, pct(V.shown, V.total)); if (Math.abs((V.lastP || 0) - p) > .05) { V.ring.style.strokeDashoffset = (100 - p).toFixed(2); V.lastP = p }
       if (V.lastN !== Math.round(V.shown)) { V.lastN = Math.round(V.shown); V.n.textContent = fmt(V.shown); V.s.textContent = sz(j.by_cat?.[key]?.bytes || 0) } }
     if (!this.finished && j.state !== 'running' && j.state !== 'paused' && ((!this.queue.length && !busy) || now - this.doneAt > 2500)) { this.finish(); this.finAt = now }
-    if (this.finished && now - this.finAt > 1600) { if (fx) g.clearRect(0, 0, W, H); return }
+    if (this.finished && now - this.finAt > 1600) return;
     this.raf = requestAnimationFrame(t => this.frame(t));
   },
   text(sel, v, how) { if (this.last[sel] === v) return; this.last[sel] = v; const e = $(sel); if (!e) return; if (how === 'transform') e.style.transform = v; else e.textContent = v },

@@ -128,6 +128,8 @@ def r_info(h, qs, b):
                      dest=settings.load()["dest"] or platform_utils.default_destination(), pil=bool(Image),
                      user=platform_utils.user_display_name(), created_supported=platform_utils.CREATED_SUPPORTED,
                      created_note=platform_utils.CREATED_NOTE, has_index=index_db.last_scan() is not None,
+                     # first start: the page runs a Quick Scan by itself (no index yet); test servers turn it off
+                     auto_scan=index_db.last_scan() is None and os.environ.get(config.NO_AUTO_SCAN_ENV) != "1",
                      apptrash=config.ANDROID or bool(apptrash.items())))
 
 
@@ -1141,17 +1143,6 @@ def console_utf8():
             pass
 
 
-def system_folder_warning():
-    """Why: a terminal opened with 'Run as administrator' starts in C:\\Windows\\System32; nothing of ours belongs there."""
-    if not config.WIN:
-        return ""
-    cwd, windir = os.path.normcase(os.getcwd()), os.path.normcase(os.environ.get("WINDIR", r"C:\Windows"))
-    if cwd == windir or cwd.startswith(windir + os.sep):
-        return ("  Note: this terminal is in the Windows folder (C:\\Windows\\System32), which usually means it was opened with\n"
-                "  'Run as administrator'. That is not needed. Close it, open a normal terminal, and run: cd $HOME\n")
-    return ""
-
-
 def main():
     if sys.version_info < (3, 10):
         sys.exit(f"{config.APP_NAME} needs Python 3.10 or newer (this is {sys.version.split()[0]}). Get it from python.org.")
@@ -1202,12 +1193,12 @@ def main():
     print(f"\n  {config.APP_NAME} - {config.TAGLINE}\n  running at {url}\n  (local only - press Ctrl+C to stop)\n"
           f"  Log file: {config.LOG_FILE}\n", flush=True)
     if platform_utils.is_admin():
-        print("  Warning: running as Administrator/root. AuraSort does not need it, and it changes which folders you see.\n"
-              "  Close this window and start it from a normal terminal (not 'Run as administrator').\n", flush=True)
-        log.warning("running with administrator/root rights")
-    note = system_folder_warning()
-    if note:
-        print(note, flush=True)
+        if config.WIN:   # the Windows installer sets AuraSort up this way on purpose
+            print("  Running with administrator permission. Windows system folders are still never touched.\n", flush=True)
+            log.info("running with administrator permission")
+        else:
+            print("  Warning: running as root. AuraSort does not need it; start it as your normal user.\n", flush=True)
+            log.warning("running with root rights")
     if trash.fake_bin_dir():
         print(f"  Test mode: 'Recycle Bin' moves files into {trash.fake_bin_dir()} ({trash.TEST_TRASH_ENV} is set).\n", flush=True)
         log.warning("test bin folder in use instead of the Recycle Bin")

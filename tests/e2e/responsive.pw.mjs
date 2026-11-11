@@ -50,6 +50,22 @@ async function openApp(w, h, mobile) {
   await page.waitForFunction(() => typeof S !== 'undefined' && S.info && !S.info.locked && document.querySelector('#gate').hidden, null, { timeout: 15000 });
   return { ctx, page };
 }
+// Why: a column squeezed so narrow that words wrap letter by letter (or one word per line) overflows nothing,
+// so the sideways-scroll check cannot see it. Text of 12+ characters on 3+ lines at under 7 characters per line is reported.
+const squeezed = page => page.evaluate(() => {
+  const out = [];
+  for (const el of document.querySelectorAll('#view *, #nav *')) {
+    if (el.children.length || el.closest('[hidden], svg, .i, kbd, .badge, .sw, .cal, #tabs')) continue;
+    const txt = (el.textContent || '').trim();
+    if (txt.length < 12 || !/[A-Za-z]{3}/.test(txt)) continue;
+    const r = el.getBoundingClientRect(), cs = getComputedStyle(el);
+    if (!r.width || cs.display === 'none' || cs.visibility === 'hidden') continue;
+    const lh = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.4;
+    const lines = Math.round((r.height - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom)) / lh);   // content height, not padding
+    if (lines >= 3 && txt.length / lines < 7) out.push(`${el.tagName.toLowerCase()}${el.className ? '.' + String(el.className).split(' ')[0] : ''} "${txt.slice(0, 24)}" ${Math.round(r.width)}px wide, ${lines} lines`);
+  }
+  return out.slice(0, 4);
+});
 const overflow = page => page.evaluate(() => {
   const W = innerWidth, out = [];
   for (const el of document.querySelectorAll('body *')) {
@@ -164,10 +180,12 @@ try {
         await go(page, v);
         const o = await overflow(page);
         if (o.scroll > o.W || o.out.length) bad.push(`${theme}/${v}: scrollWidth ${o.scroll} > ${o.W}${o.out.length ? '; sticking out: ' + o.out.join(', ') : ''}`);
+        const sq = await squeezed(page);
+        if (sq.length) bad.push(`${theme}/${v}: text squeezed into a narrow column: ${sq.join(', ')}`);
         await page.screenshot({ path: path.join(OUT, `${label}-${theme}-${v}.jpg`), type: 'jpeg', quality: 62, fullPage: false });
       }
     }
-    check(bad.length === 0, `${label} (${w}x${h}): ${PAGES.length} pages x 2 themes without sideways scrolling or clipped elements`, '\n    ' + bad.join('\n    '));
+    check(bad.length === 0, `${label} (${w}x${h}): ${PAGES.length} pages x 2 themes without sideways scrolling, clipped elements or squeezed text`, '\n    ' + bad.join('\n    '));
     await ctx.close();
   }
 } catch (e) {

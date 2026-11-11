@@ -74,19 +74,17 @@ try {
   await page.check('#gate-ok'); await page.click('#gate-go');
   check(true, 'terms gate accepted through the UI');
 
-  /* ---------- PIN: this computer, set your PIN, the bear ---------- */
+  /* ---------- PIN: this computer, set your PIN ---------- */
   await page.waitForSelector('#pin-next');
   const facts = await page.textContent('.pin-facts');
   check(/Device/.test(facts) && /Signed in as/.test(facts) && /AuraSort will ask for your PIN here/.test(await page.textContent('#gate')), '"This computer" shows the device and user name and says the PIN will be asked here');
-  await page.mouse.move(5, 5); await page.waitForTimeout(250);
-  check(await ev(() => !!document.querySelector('#pal .pp-pupil').getAttribute('transform')), 'the eyes follow the cursor');
+  check(await ev(() => !!document.querySelector('#pal.pin-lock .i') && !document.querySelector('#gate svg[class^="pin-pal"], #gate [class*="pp-"]')), 'a plain padlock icon, no character or animation');
   await page.click('#pin-next'); await page.waitForSelector('#pin-a');
   check(await page.getAttribute('#pin-a', 'inputmode') === 'numeric' && await page.getAttribute('#pin-a', 'autocomplete') === 'off', 'PIN fields: numeric keypad, no autofill');
   await page.fill('#pin-a', '1234');
-  check(await ev(() => document.querySelector('#pal').classList.contains('is-cover')), 'typing a masked PIN: the bear covers its eyes');
   check(/easy to guess/.test(await page.textContent('#pin-msg')), 'a weak PIN (1234) gets a warning');
   await page.check('#pin-showbox');
-  check(await ev(() => document.querySelector('#pal').classList.contains('is-peek')) && await page.getAttribute('#pin-a', 'type') === 'text', '"Show PIN": the bear peeks and the digits show');
+  check(await page.getAttribute('#pin-a', 'type') === 'text', '"Show PIN": the digits show');
   await page.uncheck('#pin-showbox');
   await page.fill('#pin-a', PIN); await page.fill('#pin-b', '4827');
   check(await page.isDisabled('#pin-start') && /different/.test(await page.textContent('#pin-msg')), 'two different PINs: Start stays disabled');
@@ -202,7 +200,7 @@ try {
   expecting = 'wrong PIN on purpose';
   await page.fill('#pin-x', '9999'); await page.click('#pin-ok');
   await waitFor(() => /Wrong PIN/.test(document.querySelector('#pinbox #pin-msg').textContent));
-  check(await ev(() => document.querySelector('#pal2').classList.contains('is-shake')), 'a wrong PIN: the bear shakes its head and says so');
+  check(await ev(() => document.querySelector('#pal2').classList.contains('is-shake')), 'a wrong PIN: the padlock shakes once and the message says so');
   await page.waitForTimeout(300); expecting = null;
   await page.fill('#pin-x', PIN); await page.click('#pin-ok');
   await waitFor(() => Stage.finished && !document.querySelector('#st-final').hidden, null, 30000);
@@ -254,7 +252,7 @@ try {
 
   /* ---------- lock and unlock ---------- */
   await page.click('[data-a=pin-lock-now]'); await page.waitForSelector('#pin-u');
-  check(/Unlock AuraSort/.test(await page.textContent('#gate')), 'Lock now shows the unlock screen');
+  check(/Enter PIN/.test(await page.textContent('#gate')) && !!(await page.$('#pal.pin-lock')), 'Lock now shows the unlock screen (padlock, "Enter PIN")');
   expecting = 'wrong PIN on purpose';
   await page.fill('#pin-u', '0000'); await page.click('#pin-go');
   await waitFor(() => /Wrong PIN/.test(document.querySelector('#pin-msg').textContent));

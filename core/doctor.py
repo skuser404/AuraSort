@@ -91,11 +91,13 @@ def _encoding(r):
 def _admin(r):
     admin = platform_utils.is_admin()
     r.facts["admin"] = admin
-    if admin:
-        r.add("Administrator / root", WARN, "running elevated",
-              "Not needed and not recommended. Close this window and start AuraSort from a normal terminal (not 'Run as administrator').")
+    if admin and config.WIN:
+        r.add("Administrator / root", OK, "administrator permission (as the installer sets it up); Windows system folders are still skipped")
+    elif admin:
+        r.add("Administrator / root", WARN, "running as root", "Not needed: start AuraSort as your normal user.")
     else:
-        r.add("Administrator / root", OK, "normal user (correct: no admin rights are needed)")
+        r.add("Administrator / root", OK, "standard user" + (": folders Windows protects (other users, some system places) are skipped"
+                                                             if config.WIN else ""))
 
 
 def _data_folder(r):

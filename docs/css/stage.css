@@ -2,7 +2,6 @@
 #stage { position: fixed; inset: 0; z-index: 70; overflow: hidden; opacity: 0; transition: opacity .25s ease;
   background: var(--bg) }
 #stage.in { opacity: 1 }
-#fx { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none }
 .st-wrap { position: relative; z-index: 2; height: 100%; display: flex; flex-direction: column; gap: 14px; padding: 24px 28px; overflow: auto }
 .st-head { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; align-items: flex-end }
 .st-head h2 { font-size: 28px }
@@ -10,7 +9,7 @@
 .st-stats div { text-align: right }
 .st-stats small { display: block; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--mut); font-weight: 650 }
 .st-stats b { display: block; font-family: var(--display); font-size: 20px; font-weight: 700 }
-.st-bar { height: 4px; border-radius: 9px; background: var(--track); overflow: hidden }
+.st-bar { height: 4px; border-radius: var(--r-sm); background: var(--track); overflow: hidden }
 .st-bar i { display: block; height: 100%; width: 100%; transform: scaleX(0); transform-origin: left; background: var(--grad);  transition: transform .25s linear }
 .st-mid { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; align-items: center; min-height: 260px }
 .spot { display: grid; place-items: center; min-height: 240px }
@@ -48,10 +47,10 @@
 .fly .fn { max-width: 130px; font-size: 12px; font-weight: 600; color: var(--txt); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 6px var(--bg) }
 .st-final { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; padding: 20px; background: var(--scrim); overflow: auto; animation: fadeIn .25s ease both }
 .fin { width: min(720px, 100%); text-align: center; padding: 36px 28px; background: var(--card-solid); animation: pop .25s var(--ease) both }
-.fin-mark { width: 76px; height: 76px; margin: 0 auto 16px; border-radius: 50%; display: grid; place-items: center; color: #fff; background: var(--grad);  animation: pop .25s .15s var(--ease) both }
+.fin-mark { width: 76px; height: 76px; margin: 0 auto 16px; border-radius: 50%; display: grid; place-items: center; color: var(--accent-ink); background: var(--grad);  animation: pop .25s .15s var(--ease) both }
 .fin-mark .i { width: 34px; height: 34px; stroke-width: 2.4 }
 .fin-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin: 24px 0 16px }
-.fin-stats > div { padding: 16px 10px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface) }
+.fin-stats > div { padding: 16px 10px; border-radius: var(--r-sm); border: 1px solid var(--border); background: var(--surface) }
 .fin-stats b { display: block; font-family: var(--display); font-size: 28px; font-weight: 700 }
 .fin-stats small { display: block; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; margin-top: 4px; font-weight: 650 }
 .fin .row { justify-content: center; margin-top: 18px }
@@ -67,7 +66,7 @@
 .rt-glyph .i { width: 16px; height: 16px }
 .st-route.moving .rt-path { background: linear-gradient(90deg, var(--accent) 0 50%, var(--border-2) 50%) 0 0 / 16px 2px }
 .rt-spark { width: 100%; height: 40px; border-bottom: 1px solid var(--hair) }
-.rt-spark polyline { fill: none; stroke: var(--chart-a); stroke-width: 1.5; vector-effect: non-scaling-stroke }
+.rt-spark polyline { fill: none; stroke: var(--accent); stroke-width: 1.5; vector-effect: non-scaling-stroke }
 .st-ctl { display: flex; gap: 6px; align-items: flex-end }
 .fin-report { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 12px 0 0; text-align: left }
 .fin-report > div { padding: 10px 12px; border: 1px solid var(--hair); border-radius: 8px }

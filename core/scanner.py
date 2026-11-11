@@ -561,7 +561,7 @@ def _blocked_hint():
     if config.WIN:
         return ("windows_blocked", "Windows blocked access to these folders",
                 "Check Windows Security > Virus & threat protection > Manage ransomware protection (Controlled Folder Access) and "
-                "your antivirus: allow Python (python.exe / py.exe), then scan again. AuraSort does not need administrator rights.")
+                "your antivirus: allow Python (python.exe / py.exe), then scan again. Administrator permission does not lift these blocks.")
     return ("no_permission", "You do not have permission to read these folders",
             "Scan folders your user owns, or check the folder permissions (ls -ld <folder>).")
 

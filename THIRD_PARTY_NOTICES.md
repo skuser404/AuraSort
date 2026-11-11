@@ -7,8 +7,8 @@ Owner: Sunil Kumar (GitHub: skuser404)
 > **Note:** Template provided for convenience, not legal advice. Have a qualified lawyer review before relying on it.
 
 > **The short version**
-> - AuraSort bundles no third-party code, fonts or images.
-> - It uses the fonts already on your computer, and its icons were drawn for this project.
+> - AuraSort bundles no third-party code or images. It bundles one font, Inter, under the SIL Open Font License.
+> - Its icons were drawn for this project.
 > - Two optional packages can be installed separately; they keep their own licences.
 
 ## Bundled assets
@@ -16,9 +16,10 @@ Owner: Sunil Kumar (GitHub: skuser404)
 |---|---|---|
 | `docs/icons.svg` (the icon set) | drawn for AuraSort | MIT, as part of this project |
 | Logo and favicon (inline SVG) | drawn for AuraSort | not covered by the MIT licence (see the Terms of Use, section 3) |
+| `docs/fonts/inter-latin-wght-normal.woff2`, `docs/fonts/inter-latin-ext-wght-normal.woff2` (Inter, variable weight, Latin and Latin Extended) | [The Inter Project Authors](https://github.com/rsms/inter), via the `@fontsource-variable/inter` 5.2.8 package | SIL Open Font License 1.1, full text in `docs/fonts/OFL.txt` |
 
-No fonts are bundled. The interface uses system fonts (Segoe UI on Windows, San Francisco on macOS, the system UI font on
-Linux), which are licensed to you with your operating system.
+Inter is the only bundled font. If it cannot load, the interface falls back to the system fonts (Segoe UI on Windows,
+San Francisco on macOS, the system UI font on Linux), which are licensed to you with your operating system.
 
 ## Optional packages (not bundled; installed only if you choose)
 | Package | Used for | Licence |

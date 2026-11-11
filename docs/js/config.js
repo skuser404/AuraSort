@@ -1,6 +1,6 @@
 /* AuraSort - product constants, icons, the 14 file categories and navigation. Rename the product here (and in core/config.py). */
 'use strict';
-const APP = { name: 'AuraSort', tagline: 'Make your files easier.', subline: 'Scan your whole PC, find anything fast, and sort files safely.' };
+const APP = { name: 'AuraSort', tagline: 'Local file organizer', subline: 'Finds the files on this computer, shows what takes space, and sorts them after you confirm.' };
 const PAGE_SIZE = 100;              // every list shows 100 files per page
 const SEARCH_DEBOUNCE_MS = 140;
 const FILTER_DEBOUNCE_MS = 220;
@@ -33,21 +33,22 @@ const YEAR_MIN = 1970, YEAR_MAX = 2100;
 const SORTS = [['size', 'Biggest first'], ['smallest', 'Smallest first'], ['date', 'Newest first'], ['oldest', 'Oldest first'], ['name', 'Name A–Z']];
 
 /* ---------------- icons: one hand-drawn sprite (docs/icons.svg), 20px grid, 1.5px stroke, currentColor ---------------- */
-const ICON_NAMES = new Set(["image", "video", "audio", "doc", "pdf", "sheet", "archive", "installer", "disc", "code", "log", "font", "db", "file", "files", "dash", "storage", "explore", "large", "insight", "settings", "help", "history", "scan", "folder", "moveto", "folderplus", "drive", "usb", "network", "search", "link", "x", "shield", "check", "checkall", "undo", "external", "arrow", "lock", "info", "alert", "plus", "up", "play", "pause", "stop", "chevl", "chevr", "chevd", "grid", "list", "bell", "sun", "moon", "monitor", "clock", "calendar", "copy", "refresh", "tag", "eye", "zoomin", "zoomout", "fit", "trash"]);
+const ICON_NAMES = new Set(["image", "video", "audio", "doc", "pdf", "sheet", "archive", "installer", "disc", "code", "log", "font", "db", "file", "files", "dash", "storage", "explore", "large", "insight", "settings", "help", "history", "scan", "folder", "moveto", "folderplus", "drive", "usb", "network", "search", "link", "x", "shield", "check", "checkall", "undo", "external", "lock", "info", "alert", "plus", "up", "play", "pause", "stop", "chevl", "chevr", "chevd", "grid", "list", "bell", "sun", "moon", "monitor", "calendar", "copy", "refresh", "tag", "eye", "zoomin", "zoomout", "fit", "trash"]);
 const ic = (k, cls = '') => `<svg class="i ${cls}" aria-hidden="true"><use href="icons.svg#${ICON_NAMES.has(k) ? k : 'file'}"/></svg>`;
 const LOGO = '<svg class="mark" viewBox="0 0 40 40" aria-hidden="true"><rect x="3" y="3" width="34" height="34" rx="10" fill="currentColor"/><path d="M13.5 28 20 12l6.5 16M15.9 22.5h8.2" fill="none" stroke="var(--accent-ink)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
 /* ---------------- the 14 categories (mirrors core/classify.py; vo = view-only) ---------------- */
 const CATS = [
-  { key: 'Images', ic: 'image', c: '#a78bfa' }, { key: 'Videos', ic: 'video', c: '#f472b6' }, { key: 'Audio', ic: 'audio', c: '#22d3ee' },
-  { key: 'Documents', ic: 'doc', c: '#60a5fa' }, { key: 'PDFs', ic: 'pdf', c: '#fb7185' }, { key: 'Sheets & Slides', ic: 'sheet', c: '#34d399' },
-  { key: 'Archives', ic: 'archive', c: '#fbbf24' }, { key: 'Installers & Apps', ic: 'installer', c: '#fb923c', vo: true },
-  { key: 'Disk images', ic: 'disc', c: '#2dd4bf', vo: true }, { key: 'Code & Scripts', ic: 'code', c: '#a3e635', vo: true },
-  { key: 'Text & Logs', ic: 'log', c: '#94a3b8', vo: true }, { key: 'Fonts', ic: 'font', c: '#e879f9', vo: true },
-  { key: 'Databases', ic: 'db', c: '#38bdf8', vo: true }, { key: 'Other', ic: 'file', c: '#a1a1aa', vo: true }];
+  // colours: the 7 sortable types in a validated fixed order, every view-only type in one neutral (theme.css, docs/DESIGN.md)
+  { key: 'Images', ic: 'image', c: 'var(--cat-1)' }, { key: 'Videos', ic: 'video', c: 'var(--cat-2)' }, { key: 'Audio', ic: 'audio', c: 'var(--cat-3)' },
+  { key: 'Documents', ic: 'doc', c: 'var(--cat-4)' }, { key: 'PDFs', ic: 'pdf', c: 'var(--cat-5)' }, { key: 'Sheets & Slides', ic: 'sheet', c: 'var(--cat-6)' },
+  { key: 'Archives', ic: 'archive', c: 'var(--cat-7)' }, { key: 'Installers & Apps', ic: 'installer', c: 'var(--cat-vo)', vo: true },
+  { key: 'Disk images', ic: 'disc', c: 'var(--cat-vo)', vo: true }, { key: 'Code & Scripts', ic: 'code', c: 'var(--cat-vo)', vo: true },
+  { key: 'Text & Logs', ic: 'log', c: 'var(--cat-vo)', vo: true }, { key: 'Fonts', ic: 'font', c: 'var(--cat-vo)', vo: true },
+  { key: 'Databases', ic: 'db', c: 'var(--cat-vo)', vo: true }, { key: 'Other', ic: 'file', c: 'var(--cat-vo)', vo: true }];
 const CAT = Object.fromEntries(CATS.map(c => [c.key, c]));
 const VIEW_ONLY = new Set(CATS.filter(c => c.vo).map(c => c.key));
-const ALL_FILES = { key: '', ic: 'files', c: '#8b5cf6' };
+const ALL_FILES = { key: '', ic: 'files', c: 'var(--accent)' };
 
 /* ---------------- navigation ---------------- */
 const NAV = [

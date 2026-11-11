@@ -533,6 +533,11 @@ def open_url(url):
     if ANDROID and shutil.which("termux-open-url"):
         _spawn(["termux-open-url", url])
         return
+    if WIN and is_admin():
+        # Why: a browser started by an elevated process would run elevated too; Explorer hands the address to the
+        # signed-in user's normal desktop session instead.
+        _spawn(["explorer.exe", url])
+        return
     import webbrowser
     webbrowser.open(url)
 
@@ -597,7 +602,7 @@ def relaunch_elevated(args, cwd):
 
 
 def is_admin():
-    """Why: running as Administrator/root widens what a mistake could touch, so we warn."""
+    """Why: shown in Settings and the doctor; on Windows the installer runs AuraSort elevated on purpose, root is warned about."""
     if WIN:
         try:
             return bool(ctypes.windll.shell32.IsUserAnAdmin())

@@ -2,6 +2,36 @@
 
 All notable changes to AuraSort. Dates are YYYY-MM-DD.
 
+## [1.1.3] - 2026-11-12
+
+### Changed
+- **Windows installs with administrator permission, in one command.** The installer lists what it will install and asks
+  once. Windows then asks for administrator permission; from a normal PowerShell the installer restarts itself
+  elevated. It installs Python 3.12 if needed (winget, or the official python.org installer checked against a pinned
+  SHA-256), pip and the optional packages, AuraSort in `%LOCALAPPDATA%\AuraSort` of the signed-in user (also when
+  another account approves the prompt), and Start Menu and Desktop shortcuts. It then runs the self-test and starts
+  AuraSort. Declining the prompt installs in standard mode instead of failing. See `docs/DECISIONS.md`.
+- **The first start scans by itself.** A Quick Scan of the usual folders runs without a click, then the dashboard shows
+  "Suggested organization: N files into M folders". Apply opens the Sort preview and its PIN confirmation; nothing
+  moves before that.
+- **A calmer interface** (`docs/DESIGN.md`): neutral greys and one blue accent; flat cards with 1 px borders; 6-8 px
+  radius; one self-hosted font (Inter) with a fixed type scale. Category colour now marks data only, from a validated
+  palette; icons are neutral. The PIN screen shows a padlock and "Enter PIN" instead of an animated bear. Removed: the
+  greeting, the tagline, gradients, glows, the decorative dashboard scene, counting-up numbers, the stage's floating
+  particles and pills. Space by type is a table, not a grid of tiles.
+- Optional packages: pypdf 6.21.4, and Pillow 13.0.0 on Python 3.11+. pip-audit found 69 known vulnerabilities in pypdf
+  6.9.2 and 40 in Pillow 12.3.0, and no fixed Pillow exists for Python 3.10, which now uses the built-in thumbnails.
+- macOS/Linux installer: offers to install Python (and `python3-venv` on Debian/Ubuntu) with the package manager,
+  using `sudo` only after asking.
+
+### Fixed
+- macOS: every start waited about 35 s for a reverse DNS lookup inside `http.server`; the server no longer does that
+  lookup.
+- A toast covered Delete in the selection bar for a few seconds; toasts move to the top while the bar is open.
+- Phones: the Sort page's two columns did not stack, so the preview was crushed to a few pixels wide. The phone-layout
+  test now also fails on text squeezed into a narrow column.
+- The installer stopped when pip wrote a warning (PowerShell 5.1 treats redirected stderr as an error).
+
 ## [1.1.2] - 2026-11-11
 
 ### Fixed

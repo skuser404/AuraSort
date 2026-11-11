@@ -4,7 +4,6 @@
 'use strict';
 const SENS = [['', 'All'], ['confidential', 'Confidential'], ['sensitive', 'Sensitive'], ['normal', 'Normal']];
 const AI_ENGINES = [['ollama', 'Ollama'], ['lmstudio', 'LM Studio'], ['llamacpp', 'llama.cpp server']];
-const DOC_EXTS_UI = ['pdf', 'docx', 'pptx', 'xlsx', 'txt', 'md', 'csv'];
 const AI = { st: null, job: null, timer: null, res: null };
 
 function insTabs(cur) {

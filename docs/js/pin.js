@@ -1,7 +1,7 @@
 /* AuraSort - PIN lock: "This computer" + "Set your PIN" on first run, the unlock screen, the PIN prompt before every
    move, copy, delete, undo, replace, data wipe and API-key change, and the idle auto-lock. The server enforces all of it
    (core/pin.py, core/web.py); this file is only the screens. The PIN is sent in a POST body only: never in a URL,
-   never in browser storage. The little bear is an original drawing. */
+   never in browser storage. */
 'use strict';
 const PIN_LABELS = { transfer: 'move or copy these files', trash: 'send these files to the Recycle Bin', undo: 'undo this move', delete_data: 'delete AuraSort\'s data',
   ai_key: 'change the API key', settings: 'change security settings' };
@@ -12,33 +12,11 @@ function pinWeak(p) { // Why: the same rule as core/pin.py is_weak: the UI warns
   return PIN_WEAK.has(p) || new Set(d).size <= 2 || (steps.size === 1 && (steps.has(1) || steps.has(-1)));
 }
 
-/* ---------------- the character (inline SVG, original) ---------------- */
-function pinPal(id) {
-  return `<svg class="pin-pal" id="${id}" viewBox="0 0 160 170" role="img" aria-label="AuraSort's helper, a small bear">
-    <g class="pp-head">
-      <circle class="pp-ear" cx="40" cy="42" r="19"/><circle class="pp-ear" cx="120" cy="42" r="19"/>
-      <circle class="pp-ear-in" cx="40" cy="42" r="9"/><circle class="pp-ear-in" cx="120" cy="42" r="9"/>
-      <circle class="pp-face" cx="80" cy="86" r="58"/>
-      <ellipse class="pp-muzzle" cx="80" cy="110" rx="27" ry="20"/>
-      <g class="pp-eyes"><g class="pp-eye"><circle class="pp-white" cx="58" cy="80" r="11"/><circle class="pp-pupil" cx="58" cy="80" r="5.5"/></g>
-        <g class="pp-eye"><circle class="pp-white" cx="102" cy="80" r="11"/><circle class="pp-pupil" cx="102" cy="80" r="5.5"/></g></g>
-      <path class="pp-shut" d="M49 81 Q58 87 67 81 M93 81 Q102 87 111 81"/>
-      <ellipse class="pp-nose" cx="80" cy="102" rx="7.5" ry="5.5"/>
-      <path class="pp-mouth pp-flat" d="M71 116 Q80 119 89 116"/><path class="pp-mouth pp-smile" d="M68 112 Q80 126 92 112"/>
-    </g>
-    <g class="pp-paw pp-paw-l"><rect x="26" y="128" width="44" height="36" rx="18"/><path d="M38 132v9 M48 131v10 M58 132v9"/></g>
-    <g class="pp-paw pp-paw-r"><rect x="90" y="128" width="44" height="36" rx="18"/><path d="M102 132v9 M112 131v10 M122 132v9"/></g>
-  </svg>`;
-}
-const Pal = {
-  set(id, state) { const s = $('#' + id); if (!s) return; s.classList.remove('is-cover', 'is-peek', 'is-happy', 'is-shake'); if (state) s.classList.add('is-' + state) },
-  shake(id) { const s = $('#' + id); if (!s) return; s.classList.remove('is-shake'); void s.getBBox(); s.classList.add('is-shake'); setTimeout(() => s.classList.remove('is-shake'), 600) },
-  look(id, x, y) { // Why: the eyes follow the cursor on the device screen (attributes, not inline styles: the CSP forbids those)
-    const s = $('#' + id); if (!s || s.classList.contains('is-cover')) return;
-    const r = s.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height * .47, a = Math.atan2(y - cy, x - cx), d = Math.min(4.5, Math.hypot(x - cx, y - cy) / 40);
-    s.querySelectorAll('.pp-pupil').forEach(p => p.setAttribute('transform', `translate(${(Math.cos(a) * d).toFixed(2)} ${(Math.sin(a) * d).toFixed(2)})`));
-  },
-  up(id) { const s = $('#' + id); if (s) s.querySelectorAll('.pp-pupil').forEach(p => p.setAttribute('transform', 'translate(0 -4)')) }
+/* ---------------- the padlock above each PIN form ---------------- */
+function pinPal(id) { return `<span class="pin-lock" id="${id}" aria-hidden="true">${ic('lock')}</span>` }
+const Pal = { // Why: one short shake on a wrong PIN says "not accepted"; nothing else moves
+  set() {}, look() {}, up() {},
+  shake(id) { const s = $('#' + id); if (!s) return; s.classList.remove('is-shake'); void s.offsetWidth; s.classList.add('is-shake'); setTimeout(() => s.classList.remove('is-shake'), 400) }
 };
 
 /* ---------------- shared PIN field ---------------- */
@@ -46,7 +24,7 @@ function pinField(id, label, digits) {
   return `<label class="pin-lbl" for="${id}">${esc(label)}</label>
     <input id="${id}" class="pin-in" type="password" inputmode="numeric" pattern="[0-9]*" autocomplete="off" autocorrect="off" spellcheck="false" maxlength="${digits || 6}" aria-describedby="pin-msg">`;
 }
-function bindPinInput(input, palId, onEnter) { // Why: digits only; the bear covers its eyes while you type and peeks when the PIN is shown
+function bindPinInput(input, palId, onEnter) { // Why: digits only; Enter submits
   input.addEventListener('input', () => { input.value = input.value.replace(/\D/g, '').slice(0, +input.maxLength || 6); Pal.set(palId, input.type === 'text' ? 'peek' : input.value ? 'cover' : '') });
   input.addEventListener('focus', () => Pal.set(palId, input.type === 'text' ? 'peek' : 'cover'));
   input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); onEnter() } });
@@ -80,7 +58,6 @@ const Pin = {
         <dl class="pin-facts"><div><dt>Device</dt><dd>${esc(st.device || 'this computer')}</dd></div><div><dt>Signed in as</dt><dd>${esc(st.os_user || '')}</dd></div><div><dt>System</dt><dd>${esc(st.os_name || '')}</dd></div></dl>
         <p>${esc(APP.name)} will ask for your PIN here: when it opens, and before every move, copy, delete, undo or replace.</p>
         <button class="btn pri lg" id="pin-next">Continue</button></div>`);
-      document.onpointermove = e => Pal.look('pal', e.clientX, e.clientY);
       $('#pin-next').onclick = () => this.setScreen(res);
       setTimeout(() => $('#pin-next') && $('#pin-next').focus(), 30);
     });
@@ -124,7 +101,7 @@ const Pin = {
     return new Promise(res => {
       const st = this.status || {};
       this.open(`<div class="gate-card pin-card" role="dialog" aria-modal="true" aria-labelledby="pin-h">
-        <div class="pin-hero">${pinPal('pal')}</div><h1 id="pin-h">Unlock ${esc(APP.name)}</h1>
+        <div class="pin-hero">${pinPal('pal')}</div><h1 id="pin-h">Enter PIN</h1>
         <p class="mut">${esc(st.device || 'This computer')}${st.os_user ? ' · ' + esc(st.os_user) : ''}</p>
         ${pinField('pin-u', 'PIN', st.digits)}
         <label class="row pin-show"><input type="checkbox" id="pin-showbox"> Show PIN</label>

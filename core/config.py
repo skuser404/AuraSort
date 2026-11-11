@@ -6,9 +6,10 @@ from pathlib import Path
 # ---------------- product ----------------
 APP_NAME = "AuraSort"
 APP_SLUG = "aurasort"
-APP_VERSION = "1.1.2"
-TAGLINE = "Make your files easier."
-SUBLINE = "Scan your whole PC, find anything fast, and sort files safely."
+APP_VERSION = "1.1.3"
+NO_AUTO_SCAN_ENV = "AURASORT_NO_AUTO_SCAN"   # "1": no automatic first Quick Scan (browser tests that run their own)
+TAGLINE = "Local file organizer"
+SUBLINE = "Finds the files on this computer, shows what takes space, and sorts them after you confirm."
 
 # ---------------- platform ----------------
 WIN = os.name == "nt"

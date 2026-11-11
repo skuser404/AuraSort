@@ -163,7 +163,7 @@ jobs:
             Get-Process python -ErrorAction SilentlyContinue | Stop-Process -Force
             python tools\make_fixtures.py $fx | Out-Null
             $env:USERPROFILE_BACKUP = $env:USERPROFILE
-            $env:USERPROFILE = "$fx\home"; $env:AURASORT_TEST_TRASH_DIR = "$fx\test-bin"; $env:AURASORT_STRICT_SCHEMA = '1'
+            $env:USERPROFILE = "$fx\home"; $env:AURASORT_TEST_TRASH_DIR = "$fx\test-bin"; $env:AURASORT_STRICT_SCHEMA = '1'; $env:AURASORT_NO_AUTO_SCAN = '1'
             Start-Process python -ArgumentList 'server.py', '--no-browser', '--port', '8799' -WindowStyle Hidden
             Start-Process python -ArgumentList '-m', 'http.server', '8800', '--bind', '127.0.0.1', '--directory', 'docs' -WindowStyle Hidden
             $env:USERPROFILE = $env:USERPROFILE_BACKUP   # only the test server sees the fixture home (Edge must not)
@@ -175,6 +175,7 @@ jobs:
             } else {
               node tests\e2e\full.pw.mjs --home "$fx\home" --out "$out\pw" --pw "$env:RUNNER_TEMP\pw" | Annotate; if ($LASTEXITCODE) { exit 1 }
               node tests\e2e\responsive.pw.mjs --out "$out\screens" --pw "$env:RUNNER_TEMP\pw" | Annotate; if ($LASTEXITCODE) { exit 1 }
+              node tests\e2e\firstrun.pw.mjs --pw "$env:RUNNER_TEMP\pw" | Annotate; if ($LASTEXITCODE) { exit 1 }   # its own server, automatic first scan on
             }
           }
       - uses: actions/upload-artifact@v4   # tag, not a commit SHA: replace with the SHA Dependabot proposes

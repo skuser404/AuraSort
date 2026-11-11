@@ -15,7 +15,6 @@ const pct = (a, b) => share(a, b) ?? 0;   // bar widths
 const pctTxt = p => p == null || !isFinite(p) ? 'n/a' : (p > 0 && p < 1 ? '<1' : Math.round(Math.min(100, Math.max(0, p)))) + '%';
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)');
 const motion = () => !REDUCED.matches;
-const easeOut = t => 1 - Math.pow(1 - t, 3);
 const easeIO = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 const rnd = (a, b) => a + Math.random() * (b - a);
 
@@ -53,7 +52,6 @@ function durRange(a, b) { // Why: estimates are shown as a range ("~2–4 min")
   if (b < 60) return `~${Math.max(1, Math.round(a))}–${Math.max(2, Math.round(b))} s`;
   return `~${Math.max(1, Math.round(a / 60))}–${Math.max(1, Math.ceil(b / 60))} min`;
 }
-function greeting() { const h = new Date().getHours(); return h < 5 ? 'Good night' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening' }
 
 const pad2 = n => String(n).padStart(2, '0');
 const ymd = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;   // local calendar day key
