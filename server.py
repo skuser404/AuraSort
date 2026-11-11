@@ -11,6 +11,7 @@ import re
 import secrets
 import shutil
 import socket
+import socketserver
 import sys
 import threading
 import time
@@ -1097,9 +1098,12 @@ class LocalServer(ThreadingHTTPServer):
     request_queue_size = config.LISTEN_BACKLOG   # the default (5) refuses connections when a page loads ~30 files at once
 
     def server_bind(self):
+        # Why: HTTPServer.server_bind also calls socket.getfqdn(), a reverse DNS lookup that can stall a start for many
+        # seconds (macOS CI: 37 s to start vs 1-2 s elsewhere). Nothing uses server_name, so only bind and keep the address.
         if config.WIN and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
             self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
-        super().server_bind()
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
 
 
 def make_server(port):

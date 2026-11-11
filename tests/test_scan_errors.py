@@ -353,6 +353,19 @@ class NoWmiCrashTest(ScanApiCase):
         self.assertTrue(self.get("/api/info")[1]["os_name"])
 
 
+class StartupTest(unittest.TestCase):
+    def test_server_start_does_not_wait_for_a_dns_lookup(self):
+        # Why: HTTPServer.server_bind calls socket.getfqdn(); on macOS that made every start take about 37 s.
+        import socket
+        import server
+        with mock.patch.object(socket, "getfqdn", side_effect=AssertionError("getfqdn called")):
+            srv, port = server.make_server(8970)
+        try:
+            self.assertEqual(srv.server_port, port)
+        finally:
+            srv.server_close()
+
+
 class SingleInstanceTest(TempHomeCase):
     def test_second_server_opens_the_first(self):
         env = dict(os.environ, USERPROFILE=str(self.home), HOME=str(self.home), PYTHONIOENCODING="utf-8")
@@ -363,6 +376,9 @@ class SingleInstanceTest(TempHomeCase):
             t0 = time.time()
             while not (lock_dir / instance.PORT_FILE_NAME).exists() and time.time() - t0 < 20:
                 time.sleep(0.1)
+            if not (lock_dir / instance.PORT_FILE_NAME).exists():   # say why, with the first server's own output
+                a.terminate()
+                self.fail(f"the first server did not start within 20 s: {a.communicate(timeout=10)[0][-1500:]}")
             b = subprocess.run([sys.executable, os.path.join(ROOT, "server.py"), "--no-browser", "--port", "8951"], env=env,
                                capture_output=True, text=True, encoding="utf-8", timeout=30)
             self.assertEqual(b.returncode, 0, b.stderr)
