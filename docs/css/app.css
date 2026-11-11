@@ -696,10 +696,6 @@ body.pv-open { overflow: hidden }
   .ftable .c-act { width: 120px }
 }
 @media (max-width: 860px) {
-  #app { grid-template-columns: 1fr }
-  #nav { position: static; height: auto; flex-direction: row; flex-wrap: nowrap; overflow-x: auto; padding: 10px 12px; border-right: 0; border-bottom: 1px solid var(--hair) }
-  .brand { padding: 0 8px 0 2px } .brand small, .nav-h, .nav-foot, .nav-i .c { display: none }
-  .scan-cta { margin: 0 6px 0 0 } .nav-i { width: auto; white-space: nowrap }
   .hero { grid-template-columns: 1fr; justify-items: center; text-align: center } .drive-legend { justify-content: center }
   .user-chip b, kbd { display: none }
   .g3, .g4, .stats, .qa, .kv { grid-template-columns: 1fr 1fr }
@@ -802,3 +798,71 @@ body.gated { overflow: hidden }
 @media (max-width: 520px) { .pin-in { font-size: 20px; letter-spacing: .35em } .pin-card { margin-top: 0 } }
 .clash-tbl { max-height: 46vh; overflow: auto; margin-top: 12px }
 .clash-tbl select { min-width: 130px }
+
+/* ---------- phones and small windows: drawer, bottom tabs, no sideways scrolling (docs/js/mobile.js) ---------- */
+.nav-toggle, .search-toggle, #tabs, #nav-scrim { display: none }
+#apiwarn { position: fixed; z-index: 85; left: 50%; transform: translateX(-50%); top: 10px; width: min(720px, calc(100vw - 24px));
+  display: flex; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 10px; background: var(--card-solid);
+  border: 1px solid color-mix(in srgb, var(--bad) 45%, transparent); box-shadow: var(--shadow) }
+#apiwarn[hidden] { display: none }
+#apiwarn > span { flex: 1; min-width: 0; overflow-wrap: anywhere } #apiwarn > .i { color: var(--bad); flex: none }
+@media (max-width: 899px) {
+  body { font-size: 15px }
+  #app { grid-template-columns: minmax(0, 1fr) }
+  #nav { position: fixed; z-index: 82; top: 0; bottom: 0; left: 0; height: 100dvh; width: min(300px, 86vw); flex-direction: column;
+    padding: calc(16px + env(safe-area-inset-top)) 14px calc(16px + env(safe-area-inset-bottom)) calc(14px + env(safe-area-inset-left));
+    transform: translateX(-105%); transition: transform .22s var(--ease); visibility: hidden; box-shadow: var(--shadow) }
+  body.nav-open #nav { transform: none; visibility: visible }
+  body.nav-open { overflow: hidden }
+  #nav-scrim { display: block; position: fixed; inset: 0; z-index: 81; background: var(--scrim) } #nav-scrim[hidden] { display: none }
+  .nav-i { min-height: 44px }
+  .nav-toggle, .search-toggle { display: inline-grid; place-items: center; width: 44px; height: 44px; flex: none }
+  #top { padding: calc(8px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right)) 8px calc(12px + env(safe-area-inset-left)) }
+  .top-row { flex-wrap: wrap; gap: 8px }
+  .searchbar { display: none; order: 3; flex-basis: 100%; max-width: none; min-width: 0 }
+  #top.search-open .searchbar { display: flex }
+  .searchbar .search { min-width: 0; flex: 1 }
+  .top-actions { gap: 6px; min-width: 0 }
+  .top-actions .icon-btn, .user-chip { min-width: 44px; min-height: 44px }
+  .theme-switch { display: none }
+  #view { padding: 16px calc(14px + env(safe-area-inset-right)) calc(96px + env(safe-area-inset-bottom)) calc(14px + env(safe-area-inset-left)) }
+  .foot { padding-bottom: calc(84px + env(safe-area-inset-bottom)) }
+  #tabs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); position: fixed; z-index: 60; left: 0; right: 0; bottom: 0;
+    padding: 4px calc(4px + env(safe-area-inset-right)) calc(4px + env(safe-area-inset-bottom)) calc(4px + env(safe-area-inset-left));
+    background: var(--panel); border-top: 1px solid var(--hair) }
+  #tabs .tab { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 52px; min-width: 0;
+    border: 0; border-radius: 10px; background: none; color: var(--mut); font-size: 12px; cursor: pointer }
+  #tabs .tab span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+  #tabs .tab.on { color: var(--accent); background: var(--accent-soft) } #tabs .tab:disabled { opacity: .4 }
+  #selbar { bottom: calc(68px + env(safe-area-inset-bottom)) }
+  .btn { min-height: 44px } .btn.sm { min-height: 40px }
+  /* nothing may push the page sideways: long names and paths wrap, grids and flex items may shrink */
+  .page-head, .card-h, .row, .toolbar, .actions, .chips { flex-wrap: wrap; min-width: 0 }
+  .page-head > *, .card-h > *, .card, .stack > *, .grid > * { min-width: 0 }
+  .fpath, .fn-text, .rank small, .rk-name, .note, .ad-route, td, dd, .tbl td, .chip .t { overflow-wrap: anywhere; word-break: break-word }
+  .tbl-wrap { overflow-x: auto; max-width: 100% }
+  .seg { flex-wrap: wrap; max-width: 100% }
+  .vhead, .vlist .vrow { min-width: 0 }
+  .stage, #stage .st-card { max-width: 100vw }
+}
+@media (max-width: 699px) {
+  /* tables become cards */
+  .tbl thead { display: none }
+  .tbl, .tbl tbody, .tbl tr, .tbl td { display: block; width: 100% }
+  .tbl tr { padding: 10px 6px; border-bottom: 1px solid var(--hair) }
+  .tbl td { border: 0; padding: 2px 4px; text-align: left !important }
+  /* virtual lists keep one fixed-height line per row: show the name and the key numbers, hide the extra columns */
+  .vrow, .vhead { grid-template-columns: 32px minmax(0, 1fr) auto auto !important; gap: 8px !important }
+  .vrow > :nth-child(n+5), .vhead > :nth-child(n+5) { display: none }
+  .vrow.ext-row, .vhead.ext-row { grid-template-columns: minmax(0, 1fr) auto auto !important }
+  .vrow.ext-row > :nth-child(n+4), .vhead.ext-row > :nth-child(n+4) { display: none }
+  /* dialogs become bottom sheets */
+  #modal { align-items: flex-end; padding: 0 }
+  .mbox, .mbox.adlg, .mbox.legal { width: 100%; max-height: 92dvh; border-radius: 16px 16px 0 0; padding-bottom: calc(18px + env(safe-area-inset-bottom)) }
+  #pinbox { align-items: flex-end; padding: 0 } .pin-ask { width: 100%; border-radius: 16px 16px 0 0; padding-bottom: calc(22px + env(safe-area-inset-bottom)) }
+  .clash-tbl { max-height: 50dvh }
+}
+@media (prefers-reduced-motion: reduce) { #nav { transition: none } }
+body.gated #tabs, body.gated #apiwarn { display: none }   /* the start-up and unlock screens are never covered */
+.path-box { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; font: 13px var(--mono) }
+#demo-strip { margin: -6px 0 8px; padding: 6px 10px; border-radius: 8px; font-size: 13px; font-weight: 600; color: var(--warn); background: var(--warn-soft); border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent); overflow-wrap: anywhere }

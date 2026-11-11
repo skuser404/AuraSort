@@ -33,7 +33,7 @@ _FOLDERID_PROFILE = "{5E6C858F-0E22-4760-9AFE-EA3317B67173}"
 QUICK_NAMES = ("Downloads", "Documents", "Desktop", "Pictures", "Movies" if MAC else "Videos", "Music")
 _XDG_KEYS = {"Downloads": "XDG_DOWNLOAD_DIR", "Documents": "XDG_DOCUMENTS_DIR", "Desktop": "XDG_DESKTOP_DIR",
              "Pictures": "XDG_PICTURES_DIR", "Videos": "XDG_VIDEOS_DIR", "Music": "XDG_MUSIC_DIR"}
-ANDROID_STORAGE = "/storage/emulated/0"   # the phone's shared storage (Termux also sees it as /sdcard and ~/storage/shared)
+ANDROID_STORAGE = os.environ.get("AURASORT_ANDROID_STORAGE") or "/storage/emulated/0"   # the phone's shared storage (Termux also sees it as /sdcard and ~/storage/shared); the variable is for tests
 _ANDROID_QUICK = (("Downloads", "Download"), ("Documents", "Documents"), ("Camera", "DCIM"), ("Pictures", "Pictures"),
                   ("Videos", "Movies"), ("Music", "Music"))
 
@@ -463,13 +463,26 @@ def is_hidden_system(entry_stat):
 
 
 # ---------------- opening things (argument lists only, never a shell) ----------------
+class NoFileManager(OSError):
+    """Why: Termux on Android (and a Linux box without a desktop) has no file manager to open: the UI then shows the
+    path with a Copy button instead of failing."""
+
+
 def _spawn(args):
     """Why: launching helpers must never block the server or go through a shell."""
-    subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)  # nosec B603  # fixed arg list
+    try:
+        subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)  # nosec B603  # fixed arg list
+    except FileNotFoundError:
+        raise NoFileManager(f"{args[0]} is not available here") from None
 
 
 def open_file(path):
-    """Why: 'Open file' hands a (non-executable) file to the default app."""
+    """Why: 'Open file' hands a (non-executable) file to the default app (on Android: termux-open, if Termux has it)."""
+    if ANDROID:
+        if not shutil.which("termux-open"):
+            raise NoFileManager("termux-open is not available")
+        _spawn(["termux-open", path])
+        return
     if WIN:
         os.startfile(path)  # nosec B606  # callers block executable types first
     elif MAC:
@@ -480,6 +493,8 @@ def open_file(path):
 
 def reveal(path):
     """Why: 'Open location' selects the file in Explorer/Finder instead of opening it."""
+    if ANDROID:
+        raise NoFileManager("Android has no way to open a folder from Termux")
     if WIN:
         _spawn(["explorer", "/select,", os.path.normpath(path)])
     elif MAC:
@@ -490,6 +505,8 @@ def reveal(path):
 
 def open_folder(path):
     """Why: 'Open destination' shows a folder in the file manager."""
+    if ANDROID:
+        raise NoFileManager("Android has no way to open a folder from Termux")
     if WIN:
         _spawn(["explorer", os.path.normpath(path)])
     elif MAC:
@@ -509,6 +526,8 @@ def open_url(url):
 
 def open_trash():
     """Why: after deleting, the summary offers 'Open Recycle Bin' so files can be restored."""
+    if ANDROID:
+        raise NoFileManager("AuraSort's own trash is in Settings")
     if WIN:
         _spawn(["explorer", "shell:RecycleBinFolder"])
     elif MAC:
@@ -519,7 +538,10 @@ def open_trash():
 
 # ---------------- user / privileges ----------------
 def user_display_name():
-    """Why: the top bar greets the user by name; read locally and never sent anywhere else."""
+    """Why: the top bar greets the user by name; read locally and never sent anywhere else. On Android the account is an
+    app id such as u0_a1282, not a name, so no name is shown."""
+    if ANDROID:
+        return ""
     if WIN:
         try:
             size = wintypes.ULONG(256)

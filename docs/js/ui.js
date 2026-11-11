@@ -9,11 +9,17 @@ function renderNav() { // Why: the sidebar mirrors the current view (glowing pil
     + NAV.map(n => n.h ? `<div class="nav-h">${esc(n.h)}</div>` : `<button class="nav-i ${on(n.id) ? 'on' : ''}" data-a="nav" data-v="${n.id}" ${on(n.id) ? 'aria-current="page"' : ''}
         ${NEEDS_INDEX.has(n.id) && !S.hasIndex ? 'disabled title="Scan first"' : ''}>${ic(n.icon)}<span class="l">${esc(n.label)}</span>${n.id === 'media' && S.summary ? `<span class="c num">${fmt(S.summary.total)}</span>` : ''}</button>`).join('')
     + `</nav><div class="nav-foot">${ic('shield')}<span>Local only · never permanently deletes. Nothing leaves this computer.</span></div>`;
+  if (typeof renderTabs === 'function') renderTabs();
 }
 function renderUser() { // Why: the OS user name is read locally and shown only here
   const name = (S.info && S.info.user) || '', first = name.split(/[\s.]+/)[0] || 'You';
   const initials = name.split(/[\s.]+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('') || 'U';
   $('#user-chip').innerHTML = `<span class="avatar">${esc(initials)}</span><b>${esc(first)}</b>${DEMO ? ' <span class="badge b-demo">Demo</span>' : ''}`;
+  if (DEMO && !$('#demo-strip')) {   // Why: the demo must never be mistaken for your real files (also on a phone, where the chip is small)
+    const d = document.createElement('div'); d.id = 'demo-strip'; d.setAttribute('role', 'note');
+    d.textContent = 'Demo mode, sample data only. Nothing on your computer is read. Install AuraSort to scan your own files.';
+    $('#top').prepend(d);
+  }
 }
 
 /* ---------------- feedback ---------------- */
@@ -81,6 +87,15 @@ function modal(html, cls = '') {
   const m = $('#modal'); m.innerHTML = `<div class="card mbox ${cls}" role="dialog" aria-modal="true">${html}</div>`; m.hidden = false;
   setTimeout(() => { const f = m.querySelector('[autofocus], input:not([type=checkbox]), .btn.pri, button:not(:disabled)'); f && f.focus() }, 30);
   return m.firstElementChild;
+}
+function pathFallback(r) { // Why: no file manager to open (Android/Termux): show the path with Copy, or AuraSort's own trash
+  if (!r || r.ok !== false) return false;
+  if (r.fallback === 'apptrash') { go('settings'); setTimeout(() => { const s = $('#set-apptrash'); if (s) { s.hidden = false; s.scrollIntoView() } }, 300); return true }
+  modal(`<h2>Where it is</h2><p class="mut">This system cannot open a file manager from ${esc(APP.name)}. The full path:</p>
+    <pre class="path-box">${esc(r.path || '')}</pre><div class="row" data-css="justify-content:flex-end;margin-top:12px"><button class="btn ghost" data-a="cf-no">Close</button><button class="btn pri" data-a="path-copy">${ic('copy')} Copy path</button></div>`);
+  ACT['cf-no'] = () => closeModal();
+  ACT['path-copy'] = async () => { await copyText(r.path || ''); toast('Path copied', 'ok') };
+  return true;
 }
 function closeModal() { const m = $('#modal'); m.hidden = true; m.innerHTML = ''; if (closeModal.done) { const d = closeModal.done; closeModal.done = null; d(false) } }
 function confirmDialog({ title, body, ok = 'Continue', danger = false, check = '', typed = '' }) { // Why: every risky step asks first (with an optional "I understand" tick)

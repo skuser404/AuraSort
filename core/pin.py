@@ -57,7 +57,8 @@ def _save(d):
         with open(tmp, "w", encoding="utf-8") as fh:
             json.dump(d, fh)
         replace_file(tmp, _file())
-        make_private(_file(), is_dir=False)
+        if not config.WIN:   # Windows: the file inherits the data folder's user-only ACL (icacls per save took ~1 s)
+            make_private(_file(), is_dir=False)
         _set_cache.pop(str(_file()), None)
 
 

@@ -192,7 +192,7 @@ const fn = new Function(src.match(/function driveName\(p\) \{[\s\S]*?\n\}/)[0] +
 process.stdout.write(JSON.stringify(JSON.parse(process.argv[2]).map(fn)));
 """
         cases = {"C:\\": "C:", "d:\\Photos": "D:", "/": "/", "/Volumes/My Disk": "My Disk", "\\\\server\\share\\sub": "\\\\server\\share",
-                 "/media/usb": "usb", "/run/media/me/STICK": "STICK", "": "/"}
+                 "/media/usb": "usb", "/run/media/me/STICK": "STICK", "": "/", "/storage/emulated/0": "phone", "/storage/1A2B-3C4D": "SD card"}
         r = subprocess.run([NODE, "-e", js, os.path.join(JS, "util.js"), json.dumps(list(cases))], capture_output=True, text=True, encoding="utf-8", timeout=30)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(json.loads(r.stdout), list(cases.values()))

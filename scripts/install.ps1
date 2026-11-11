@@ -212,11 +212,17 @@ try {
   }
   if ($WhatIfPreference) { Say ''; Say 'WhatIf: nothing was installed or changed.'; return }
 
-  # ---- 6. self-test ----
-  Step 'Self-test (server.py --doctor)'
+  # ---- 6. self-test: a real 3-second scan of a temporary folder of known files ----
+  Step 'Self-test'
   Push-Location $InstallDir
-  try { & $py.exe server.py --doctor | Select-Object -First 30 | ForEach-Object { Say "  $_" }; $doc = $LASTEXITCODE } finally { Pop-Location }
-  if ($doc -ne 0) { Say '  The self-test found a problem (see FAIL above). AuraSort may still work; the README troubleshooting table explains each line.' }
+  try { & $py.exe server.py --self-test | ForEach-Object { Say "  $_" }; $selfTest = $LASTEXITCODE } finally { Pop-Location }
+  if ($selfTest -ne 0) {
+    $report = Join-Path $env:TEMP 'aurasort-doctor.txt'
+    Push-Location $InstallDir
+    try { & $py.exe server.py --doctor | Out-File -Encoding utf8 $report } finally { Pop-Location }
+    Write-Warning "The self-test did not pass. A report is in $report (no file names in it)."
+    Write-Warning "Send that file, or the output of this command, to the developer:  cd `"$InstallDir`"; py server.py --doctor"
+  }
 
   Say ''
   Say "AuraSort $ver is installed in $InstallDir" -ForegroundColor Green
@@ -226,3 +232,7 @@ try {
 } finally {
   Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue -WhatIf:$false
 }
+# Why: an explicit result. Without it, the exit code of the last program run inside the script leaks out (that made
+# every CI install "fail"). 0 = installed and the self-test passed; 2 = installed, but the self-test needs a look.
+if ($WhatIfPreference) { exit 0 }
+exit $(if ($selfTest -eq 0) { 0 } else { 2 })

@@ -20,7 +20,8 @@ function go(view, mode = 'push') { // Why: navigation = state change + render + 
 }
 function syncSearchBox() { const g = $('#gq'); if (g && document.activeElement !== g) g.value = S.view === 'search' ? S.F.q : '' }
 async function refreshIndex() { // Why: after scans/moves the dashboard numbers and the search index version come from the server
-  try { S.summary = await API.summary(); S.hasIndex = !!(S.summary && S.summary.scan) } catch (e) { S.offline = true }
+  try { S.summary = await API.summary(); S.hasIndex = !!(S.summary && S.summary.scan); S.offline = false; apiWarn(null) }
+  catch (e) { S.offline = true; apiWarn(e) }   // never silent: the old numbers stay, with a banner that says they could not be refreshed
   S.extData = null; renderNav();
 }
 
@@ -43,7 +44,7 @@ ACT.rmf = t => { const k = t.dataset.k;
   else if (k === 'date') Object.assign(S.F, { date: '', from: '', to: '' }); else if (k.startsWith('format:')) S.F.formats.delete(k.slice(7));
   S.page = 1; render(false); syncURL('replace') };
 ACT.clearf = () => { S.F = blankF({ q: S.view === 'search' ? '' : S.F.q, type: S.view === 'media' ? S.F.type : '', sort: S.F.sort, datefield: S.F.datefield }); if (S.view === 'search') $('#gq').value = ''; S.page = 1; render(false); syncURL('replace') };
-ACT.reveal = t => API.reveal(+t.dataset.id).then(r => r && r.demo && toast('Demo: this would show the file in Explorer.')).catch(e => toastError(e));
+ACT.reveal = t => API.reveal(+t.dataset.id).then(r => pathFallback(r) || (r && r.demo && toast('Demo: this would show the file in Explorer.'))).catch(e => toastError(e));
 ACT.theme = t => { setTheme(t.dataset.t); if (S.view === 'settings') render(false) };
 ACT.bell = () => toggleDrawer();
 ACT['notes-clear'] = () => { S.notes = []; try { localStorage.removeItem(NOTES_KEY) } catch (e) { /* ignore */ } toggleDrawer(); toggleDrawer() };

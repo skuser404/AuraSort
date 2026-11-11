@@ -70,6 +70,8 @@ function driveName(p) { // Why: a short label for any mount: "C:", a network sha
   const unc = s.match(/^[\\/]{2}([^\\/]+)[\\/]+([^\\/]+)/);
   if (unc) return `\\\\${unc[1]}\\${unc[2]}`;
   if (s.startsWith('/Volumes/')) return s.split('/')[2] || '/';
+  if (/^\/storage\/emulated\/\d+\/?$/.test(s)) return 'phone';   // Android: was "0", which read like "0 files"
+  if (/^\/storage\/[0-9A-F]{4}-[0-9A-F]{4}\/?$/i.test(s)) return 'SD card';
   const parts = s.split('/').filter(Boolean);
   return parts.length ? parts[parts.length - 1] : '/';
 }

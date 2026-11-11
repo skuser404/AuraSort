@@ -165,5 +165,5 @@ ACT['act-trash'] = () => toBin(Sel.ids());
 ACT['pv-move'] = t => moveOrCopy('move', [+t.dataset.id], true);
 ACT['pv-copyto'] = t => moveOrCopy('copy', [+t.dataset.id], true);
 ACT['pv-trash'] = t => toBin([+t.dataset.id], true);
-ACT['open-bin'] = () => API.openTrash().then(r => r && r.demo && toast(`Demo: this would open the ${binName()}.`)).catch(e => toastError(e));
+ACT['open-bin'] = () => API.openTrash().then(r => pathFallback(r) || (r && r.demo && toast(`Demo: this would open the ${binName()}.`))).catch(e => toastError(e));
 ACT['bp-done'] = () => closeModal();

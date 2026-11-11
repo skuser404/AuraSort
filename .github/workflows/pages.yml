@@ -37,9 +37,35 @@ jobs:
           # the same legal files, shown offline inside the demo
           cp TERMS_OF_USE.md ACCEPTABLE_USE.md PRIVACY_POLICY.md AI_DATA_NOTICE.md THIRD_PARTY_NOTICES.md CODE_OF_CONDUCT.md LICENSE _site/demo/legal/
           touch _site/.nojekyll
+      - name: Is GitHub Pages turned on? (a workflow token cannot turn it on; the owner does it once)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh api "repos/${{ github.repository }}/pages" >/dev/null 2>&1; then
+            echo "::error title=GitHub Pages is not enabled::Open https://github.com/${{ github.repository }}/settings/pages and set Source to 'GitHub Actions', then re-run this workflow."
+            exit 1
+          fi
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: _site
       - id: deployment
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+
+  verify:
+    name: the live website and demo work (desktop + phone, no errors, no 404s)
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+      - name: Playwright (test-only)
+        run: npm install --no-save --prefix "$RUNNER_TEMP/pw" playwright@1.65.0 && (cd "$RUNNER_TEMP/pw" && npx playwright install --with-deps chromium)
+      - name: Check https://skuser404.github.io/AuraSort/ and /demo/
+        run: |
+          sleep 30
+          node tests/e2e/demo_live.pw.mjs --site "https://skuser404.github.io/AuraSort/" --url "https://skuser404.github.io/AuraSort/demo/" --pw "$RUNNER_TEMP/pw"

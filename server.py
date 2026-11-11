@@ -531,7 +531,10 @@ def r_open(h, qs, b):
         raise ApiError(400, "This file is marked as a program on your system, so it is not opened. Use Open location instead.")
     if row["ext"] in classify.MACRO_OFFICE and not b.get("macro_ok"):
         raise ApiError(409, "This Office file can contain macros. Confirm before opening it.")
-    platform_utils.open_file(path)
+    try:
+        platform_utils.open_file(path)
+    except platform_utils.NoFileManager:
+        return h.send(200, {"ok": False, "fallback": "copy", "path": path})   # the UI shows the path with a Copy button
     log.info("opened file id %s with its default app", row["id"])
     h.send(200, {"ok": True})
 
@@ -543,13 +546,19 @@ def r_reveal(h, qs, b):
         dest = str(history.load(schema.text(b, "job")).get("dest") or "")
         if not os.path.isdir(dest):
             raise ApiError(400, "That destination folder no longer exists.")
-        platform_utils.open_folder(dest)
+        try:
+            platform_utils.open_folder(dest)
+        except platform_utils.NoFileManager:
+            return h.send(200, {"ok": False, "fallback": "copy", "path": dest})
     else:
         row = require_file(b.get("id", -1))
         path = file_path(row)
         if not os.path.lexists(path):
             raise ApiError(400, "The file is no longer there. Scan again to refresh.")
-        platform_utils.reveal(path)
+        try:
+            platform_utils.reveal(path)
+        except platform_utils.NoFileManager:
+            return h.send(200, {"ok": False, "fallback": "copy", "path": path})
     h.send(200, {"ok": True})
 
 
@@ -848,7 +857,10 @@ def r_trash(h, qs, b):
 @route(R, "POST", "open-trash")
 def r_open_trash(h, qs, b):
     """Why: after sending files to the Recycle Bin, one click shows where to restore them."""
-    platform_utils.open_trash()
+    try:
+        platform_utils.open_trash()
+    except platform_utils.NoFileManager:
+        return h.send(200, {"ok": False, "fallback": "apptrash"})   # Android: the UI opens Settings > AuraSort trash
     h.send(200, {"ok": True})
 
 
@@ -1119,12 +1131,16 @@ def main():
     ap.add_argument("--doctor", action="store_true", help="check this computer (Python, data folder, SQLite, folders, a 3-second test scan) and exit")
     ap.add_argument("--folder", default="", help="with --doctor: the folder to test-scan (default: the first Quick Scan folder)")
     ap.add_argument("--json", action="store_true", help="with --doctor: print JSON instead of text")
+    ap.add_argument("--self-test", action="store_true", help="scan a temporary folder of known files and say whether all were found")
     a = ap.parse_args()
     if a.host not in config.LOCAL_HOSTNAMES:
         sys.exit(f"{config.APP_NAME} only listens on 127.0.0.1 (refusing {a.host!r}).")
     if a.doctor:
         from core import doctor
         sys.exit(doctor.main(a.folder or None, a.json))
+    if a.self_test:
+        from core import doctor
+        sys.exit(doctor.self_test())
     setup_log()
     if not instance.acquire():
         port = instance.running_port()

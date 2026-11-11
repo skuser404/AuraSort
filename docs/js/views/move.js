@@ -84,6 +84,6 @@ ACT['st-cancel'] = async () => { // Why: files already done stay done and verifi
   if (!await confirmDialog({ title: 'Stop now?', ok: 'Stop', danger: true, body: '<p>Files already finished stay where they are (and can be undone from History). The file being copied right now stays at its original place; its partial copy is removed.</p>' })) return;
   API.jobControl(Stage.jid, 'cancel').catch(e => toastError(e));
 };
-ACT['st-open'] = () => API.revealJob(Stage.jid).then(r => r && r.demo && toast('Demo: this would open the destination folder.')).catch(e => toastError(e));
+ACT['st-open'] = () => API.revealJob(Stage.jid).then(r => pathFallback(r) || (r && r.demo && toast('Demo: this would open the destination folder.'))).catch(e => toastError(e));
 ACT['st-undo'] = async () => { if (!await confirmDialog({ title: 'Undo this move?', body: 'Every file goes back to where it came from (nothing is overwritten).', ok: 'Undo move' })) return;
   try { const r = await API.undo(Stage.jid); toast(`Restored ${fmt(r.restored)} files${r.missing ? `, ${fmt(r.missing)} missing` : ''}`, 'ok'); Stage.close('history') } catch (e) { toastError(e) } };

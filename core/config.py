@@ -6,7 +6,7 @@ from pathlib import Path
 # ---------------- product ----------------
 APP_NAME = "AuraSort"
 APP_SLUG = "aurasort"
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.1.1"
 TAGLINE = "Make your files easier."
 SUBLINE = "Scan your whole PC, find anything fast, and sort files safely."
 
@@ -15,12 +15,15 @@ WIN = os.name == "nt"
 MAC = sys.platform == "darwin"
 # Termux on Android reports "linux"; CPython's own Android build reports "android". Both have no Recycle Bin.
 ANDROID = sys.platform == "android" or (sys.platform.startswith("linux") and ("ANDROID_ROOT" in os.environ or "com.termux" in os.environ.get("PREFIX", "")))
+FAKE_PLATFORM_ENV = "AURASORT_FAKE_PLATFORM"   # tests only: "android" simulates Termux on a desktop (paths and trash; no check is loosened)
+ANDROID = ANDROID or os.environ.get(FAKE_PLATFORM_ENV) == "android"
 LINUX = sys.platform.startswith("linux") or ANDROID
 PLATFORM = "windows" if WIN else "mac" if MAC else "android" if ANDROID else "linux"
 
 # ---------------- network (local only) ----------------
 BIND_HOST = "127.0.0.1"            # loopback only: the server refuses any other address
 LOCAL_HOSTNAMES = ("127.0.0.1", "localhost")
+ALLOWED_HOST_NAMES = LOCAL_HOSTNAMES + ("[::1]",)   # Host/Origin values accepted ([::1] is what a browser opened at the IPv6 loopback address sends)
 DEFAULT_PORT = 8765
 PORT_SEARCH_RANGE = 20             # try this many ports if the default is busy
 LISTEN_BACKLOG = 128               # pending connections the server accepts (a page load opens many at once)

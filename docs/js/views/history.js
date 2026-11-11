@@ -42,4 +42,4 @@ ACT.histinfo = async t => { // Why: exactly which files an action touched, and w
     <div class="row" data-css="justify-content:flex-end;margin-top:16px"><button class="btn pri" data-a="cf-no">Close</button></div>`);
   ACT['cf-no'] = () => closeModal();
 };
-ACT.openjob = t => API.revealJob(t.dataset.id).then(r => r && r.demo && toast('Demo: this would open the destination folder.')).catch(e => toastError(e));
+ACT.openjob = t => API.revealJob(t.dataset.id).then(r => pathFallback(r) || (r && r.demo && toast('Demo: this would open the destination folder.'))).catch(e => toastError(e));

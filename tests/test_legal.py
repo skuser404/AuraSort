@@ -62,8 +62,9 @@ class DocumentsTest(unittest.TestCase):
     def test_every_bundled_asset_has_a_notice(self):
         notices = read("THIRD_PARTY_NOTICES.md")
         for base, _, files in os.walk(os.path.join(ROOT, "docs")):
+            folder = os.path.relpath(base, ROOT).replace(os.sep, "/") + "/"
             for f in files:
-                if f.lower().endswith(ASSET_EXTS):
+                if f.lower().endswith(ASSET_EXTS) and folder not in notices:   # a folder entry covers its files (own screenshots)
                     self.assertIn(f, notices, f"{f} is bundled but not listed in THIRD_PARTY_NOTICES.md")
 
     def test_issue_templates_warn_about_private_data(self):

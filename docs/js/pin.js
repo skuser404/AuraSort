@@ -58,12 +58,15 @@ function showToggle(palId, inputs) {
 const Pin = {
   status: null, gateOpen: false, lastActive: Date.now(), idleTimer: null,
 
+  starting: true,   // until the start-up gate is done: a 423 from an early request must not reload the page mid-setup
   async gate() { // Why: nothing else starts until a PIN exists and the app is unlocked
-    if (DEMO) return;
-    try { this.status = await API.pinStatus() } catch (e) { this.status = null; return }
-    if (!this.status.set) await this.firstRun();
-    else if (!this.status.unlocked) await this.unlockScreen();
-    this.watch();
+    if (DEMO) { this.starting = false; return }
+    try {
+      try { this.status = await API.pinStatus() } catch (e) { this.status = null; return }
+      if (!this.status.set) await this.firstRun();
+      else if (!this.status.unlocked) await this.unlockScreen();
+      this.watch();
+    } finally { this.starting = false }
   },
 
   open(html) { const g = $('#gate'); g.innerHTML = html; applyCss(g); g.hidden = false; document.body.classList.add('gated'); this.gateOpen = true; return g },
@@ -96,17 +99,18 @@ const Pin = {
         <button class="btn pri lg" id="pin-start" disabled>Start ${esc(APP.name)}</button></div>`);
       $$('.pin-card .seg button').forEach(b => b.onclick = () => { digits = +b.dataset.n; draw() });
       const a = $('#pin-a'), b = $('#pin-b'), go = $('#pin-start'), msg = $('#pin-msg');
+      let busy = false;   // one submit at a time (typing during it must not re-enable Start)
       const check = () => {
         const ok = a.value.length === digits && b.value === a.value;
-        go.disabled = !ok;
+        go.disabled = !ok || busy;
         msg.className = 'pin-msg' + (a.value.length === digits && pinWeak(a.value) ? ' warn' : '');
         msg.textContent = b.value && b.value.length >= digits && b.value !== a.value ? 'The two PINs are different.' : a.value.length === digits && pinWeak(a.value) ? 'This PIN is easy to guess (like 1234 or 0000). You can still use it, but a less obvious one is safer.' : '';
       };
       const submit = async () => {
-        if (go.disabled) return;
-        go.disabled = true;
+        if (go.disabled || busy) return;
+        busy = true; go.disabled = true;
         try { await API.pinSet({ pin: a.value }); Pal.set('pal', 'happy'); Pal.up('pal'); setTimeout(() => { this.close(); done() }, 650) }
-        catch (e) { msg.className = 'pin-msg err'; msg.textContent = friendly(e); Pal.shake('pal'); go.disabled = false }
+        catch (e) { busy = false; msg.className = 'pin-msg err'; msg.textContent = friendly(e); Pal.shake('pal'); go.disabled = false }
       };
       [a, b].forEach(i => { bindPinInput(i, 'pal', submit); i.addEventListener('input', check) });
       showToggle('pal', () => [a, b])($('#pin-showbox'));
@@ -162,7 +166,7 @@ const Pin = {
   },
 
   async onLocked() { // Why: the server answered 423 (idle lock, or locked in another tab): show the unlock screen, then refresh
-    if (this.gateOpen || DEMO) return;
+    if (this.gateOpen || this.starting || DEMO) return;
     closeModal(); this.closeAsk();
     try { this.status = await API.pinStatus() } catch (e) { return }
     if (!this.status.set) { location.reload(); return }

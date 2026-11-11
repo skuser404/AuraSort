@@ -61,8 +61,8 @@ irm https://github.com/skuser404/AuraSort/releases/latest/download/install.ps1 |
 
 It checks for Python (and offers to install it with winget if missing), downloads the latest release, checks its SHA-256
 against the release's `SHA256SUMS` (and refuses to install on a mismatch), installs it to `%LOCALAPPDATA%\AuraSort`,
-installs the optional packages for your user, adds **Start Menu and Desktop shortcuts**, runs a self-test and offers to
-start AuraSort. On an old Windows 10 that says *Could not create SSL/TLS secure channel*, run this line first:
+installs the optional packages for your user, adds **Start Menu and Desktop shortcuts**, runs a self-test (a real scan
+of a temporary folder: it must print `Self-test passed: found 6 files`) and offers to start AuraSort. On an old Windows 10 that says *Could not create SSL/TLS secure channel*, run this line first:
 `[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072`.
 To see every step without changing anything:
 `& ([scriptblock]::Create((irm https://github.com/skuser404/AuraSort/releases/latest/download/install.ps1))) -WhatIf`
@@ -145,8 +145,8 @@ It adds an `aurasort` command and an applications-menu entry. **Step 3: manual:*
 
 ### Android (Termux): experimental
 
-AuraSort can run inside [Termux](https://termux.dev) on an Android phone and open in the phone's browser. **Phone-optimized
-layout: coming later.** The desktop layout works, but it is not designed for small screens yet.
+AuraSort can run inside [Termux](https://termux.dev) on an Android phone and open in the phone's browser, with a phone
+layout (menu button, bottom tabs). A native Android app is not planned yet.
 
 1. Install **Termux from [F-Droid](https://f-droid.org/packages/com.termux/) or the
    [Termux GitHub releases](https://github.com/termux/termux-app/releases)**. The Google Play version is outdated.
@@ -302,6 +302,8 @@ medical documents. See [AI_DATA_NOTICE.md](AI_DATA_NOTICE.md).
 | macOS: `python3` asks to install *command line developer tools*, or says it is 3.9 | Install a current Python: `brew install python` (or python.org), then use the installer above. |
 | Linux/macOS: `pip` says **externally-managed-environment** | Use a virtual environment as in the manual steps (`python3 -m venv .venv`), or the installer, which does that for you. |
 | Python 3.14: `pip install` tries to build Pillow and fails | Fixed in 1.1.0: `requirements.txt` now pins Pillow 12.3.0, which has ready-made wheels for Python 3.10 to 3.14. Pull or reinstall. |
+| Android: "Your phone's folders cannot be seen yet" / 0 files | Termux has no storage access. Run `termux-setup-storage`, tap **Allow** (Android 11+: *Allow management of all files*), then press Scan again. |
+| The installer says "Self-test did not pass" | It saved a report (no file names) and printed its location: send that file, or the output of `py server.py --doctor`. |
 | Forgot the PIN | *Forgot PIN?* on the unlock screen, type RESET. AuraSort's own data is wiped (never your files) and you set a new PIN. |
 | "Too many wrong PINs" | Wait for the countdown (30 s, then 1, 5, 15 minutes). Restarting AuraSort does not reset it. |
 | "This page belongs to an older server session" | You restarted AuraSort. Reload the page. |

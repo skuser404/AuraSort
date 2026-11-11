@@ -29,7 +29,7 @@ jobs:
       - name: Test before releasing
         env:
           AURASORT_TEST_TRASH_DIR: ${{ runner.temp }}/test-bin
-        run: python -m unittest discover -s tests -t .
+        run: python tools/ci_unittest.py && python tests/acceptance/run_acceptance.py
       - name: Build aurasort.zip, the installers and SHA256SUMS
         run: python tools/build_release.py dist && cat dist/SHA256SUMS
       - name: Publish the release

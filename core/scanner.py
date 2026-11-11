@@ -481,6 +481,12 @@ def start(mode, roots, skip, est_files=0):
     if mode not in ("quick", "deep"):
         raise BadRequest("Unknown scan mode. Use Quick Scan or Deep Scan.", "bad_mode")
     skipped = {}
+    if mode == "quick" and not roots and not quick_roots():
+        # Before: "Pick at least one drive or folder." (it said nothing about why). On a phone this means no storage access yet.
+        if config.ANDROID:
+            raise BadRequest("Your phone's folders (Download, DCIM, Documents...) cannot be seen yet.", "no_storage_access", ANDROID_STORAGE_HELP)
+        raise BadRequest("None of your usual folders (Downloads, Documents, Pictures...) were found.", "no_quick_folders",
+                         "Use Deep Scan and add the folders you want to scan. Settings > Diagnostics shows where AuraSort looked.")
     roots = clean_roots(quick_roots() if mode == "quick" and not roots else roots, skipped)
     skip = [canonical(s) for s in skip]
     job = jobs.Job("scan", total=int(est_files or 0), mode=mode, roots=roots, found=0, bytes=0, dirs=0, queued=0, noaccess=0,
@@ -543,7 +549,11 @@ def _used(root):
 
 
 def _blocked_hint():
-    """Why: 'no permission' has a different fix on each OS; say the one that applies here."""
+    """Why: 'no permission' has a different fix on each OS; say the one that applies here (Android first: Termux on a
+    phone is never Windows, but the check order must not depend on that)."""
+    if config.ANDROID:
+        return ("android_storage", "Allow storage access",
+                ANDROID_STORAGE_HELP)
     if config.MAC:
         return ("mac_privacy", "macOS blocked access to these folders",
                 "Open System Settings > Privacy & Security > Full Disk Access (or Files and Folders), allow Terminal (or the Python "
@@ -552,11 +562,12 @@ def _blocked_hint():
         return ("windows_blocked", "Windows blocked access to these folders",
                 "Check Windows Security > Virus & threat protection > Manage ransomware protection (Controlled Folder Access) and "
                 "your antivirus: allow Python (python.exe / py.exe), then scan again. AuraSort does not need administrator rights.")
-    if config.ANDROID:
-        return ("android_storage", "Android did not allow access to your files",
-                "Run termux-setup-storage in Termux, allow 'Files and media', then start AuraSort again.")
     return ("no_permission", "You do not have permission to read these folders",
             "Scan folders your user owns, or check the folder permissions (ls -ld <folder>).")
+
+
+ANDROID_STORAGE_HELP = ("Android did not let Termux read your files. Run termux-setup-storage in Termux, tap Allow "
+                        "(Android 11 and newer: 'Allow management of all files'), then press Scan again.")
 
 
 def explain(s):

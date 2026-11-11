@@ -2,6 +2,31 @@
 
 All notable changes to AuraSort. Dates are YYYY-MM-DD.
 
+## [1.1.1] - 2026-11-11
+
+### Fixed
+- Android/Termux without storage access said "Pick at least one drive or folder."; it now says to run
+  `termux-setup-storage` and allow access, as a card on the Scan page. Unreadable phone storage is explained the same way.
+- "Phone storage (0)" looked like zero files: the "0" was the end of `/storage/emulated/0`. The label now says "phone",
+  and the greeting no longer shows the Termux account id.
+- A browser opened at the IPv6 loopback address (`[::1]`) was refused (403).
+- A failed refresh of the numbers was silent: old or zero numbers stayed on screen. A banner now shows the message and
+  the HTTP status, with Reload.
+- The installers' self-test reported a false failure on an empty Downloads folder (only `desktop.ini`), and its exit code
+  leaked out of `install.ps1`, so CI installs "failed". The installers now end with "Self-test passed: found N files"
+  (`server.py --self-test`) and an explicit exit code.
+- Saving settings could fail with WinError 5 when another request was reading them; PIN setup on phones could be covered
+  by the tab bar or reloaded mid-way; PDFs without font resources gave no text when pypdf was installed. See FIX_LOG.md.
+- "Open location" / "Open destination" on Android (and Linux without a desktop) failed; they now show the path with Copy.
+
+### Added
+- Phones and small windows: a slide-in menu (menu button, Esc, focus kept inside), a bottom tab bar (Dashboard, Scan,
+  Media, Sort, More), a search button, cards instead of tables, bottom-sheet dialogs, 44 px touch targets, safe areas.
+  Checked automatically at 360, 412, 768 and 1366 px in both themes (no sideways scrolling); screenshots in docs/screenshots.
+- `tests/acceptance/run_acceptance.py` (the 0-files bug, 14 variants), `tests/e2e/responsive.pw.mjs`,
+  `tests/e2e/demo_live.pw.mjs` (the public demo, also run after each Pages deploy), `tools/ci_unittest.py` (each failed
+  test becomes an annotation on the CI page), a "Demo mode, sample data only" strip.
+
 ## [1.1.0] - 2026-11-11
 
 ### Fixed

@@ -38,7 +38,8 @@ def _save(items):
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(items, fh, ensure_ascii=False)
     replace_file(tmp, _index_path())
-    make_private(_index_path(), is_dir=False)
+    if not config.WIN:   # Windows: inherits the data folder's user-only ACL
+        make_private(_index_path(), is_dir=False)
 
 
 def trash_root(path):

@@ -33,3 +33,7 @@ terms. AuraSort does not bundle or install them.
 ## Code of conduct text
 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) is adapted from the Contributor Covenant, version 2.1
 (<https://www.contributor-covenant.org/version/2/1/code_of_conduct/>), licensed under CC BY 4.0.
+
+## Screenshots
+`docs/screenshots/`: screenshots of AuraSort itself (phone, tablet and desktop sizes, light and dark), made by its own
+test suite from made-up test files. Own work, under the same MIT licence as the code.

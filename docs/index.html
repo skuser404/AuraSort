@@ -2,7 +2,7 @@
 <html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="app-token" content="__TOKEN__">
 <meta name="color-scheme" content="dark light">
 <meta name="referrer" content="no-referrer">
@@ -24,6 +24,9 @@
   <div class="main">
     <header id="top">
       <div class="top-row">
+        <button class="icon-btn nav-toggle" id="nav-toggle" data-a="nav-open" aria-label="Open the menu" aria-controls="nav" aria-expanded="false">
+          <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+        </button>
         <div class="searchbar" role="search">
           <label class="search">
             <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
@@ -35,6 +38,9 @@
           </button>
         </div>
         <div class="top-actions">
+          <button class="icon-btn search-toggle" data-a="search-open" aria-label="Search files" aria-expanded="false">
+            <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          </button>
           <button class="icon-btn" id="bell" data-a="bell" aria-label="Notifications"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg><span class="dot" hidden></span></button>
           <div class="theme-switch" id="theme-switch" role="group" aria-label="Theme"></div>
           <div class="user-chip" id="user-chip" title="Signed in to this computer"></div>
@@ -46,6 +52,9 @@
     <footer id="foot" class="foot"></footer>
   </div>
 </div>
+<div id="nav-scrim" data-a="nav-close" hidden></div>
+<nav id="tabs" aria-label="Main pages"></nav>
+<div id="apiwarn" role="alert" hidden></div>
 <div id="drawer" class="card" hidden></div>
 <div id="selbar" class="card" role="region" aria-label="Selected files" hidden></div>
 <div id="pop" class="card" role="dialog" aria-label="Filter" hidden></div>
@@ -84,6 +93,7 @@
 <script src="js/ui.js" defer></script>
 <script src="js/legal.js" defer></script>
 <script src="js/pin.js" defer></script>
+<script src="js/mobile.js" defer></script>
 <script src="js/select.js" defer></script>
 <script src="js/preview.js" defer></script>
 <script src="js/datefilter.js" defer></script>

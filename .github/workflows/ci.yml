@@ -32,7 +32,11 @@ jobs:
       - name: Unit tests, contract tests, no-emoji test (standard library only)
         env:
           AURASORT_TEST_TRASH_DIR: ${{ runner.temp }}/test-bin
-        run: python -m unittest discover -s tests -t . -v
+        run: python tools/ci_unittest.py    # each failure also becomes an annotation on the run page
+      - name: Acceptance (real server, fresh home, the UI's API calls, 14 variants incl. Android and old data)
+        run: python tests/acceptance/run_acceptance.py
+      - name: Self-test (the installers' last step)
+        run: python server.py --self-test
       - name: Doctor runs on a brand-new home
         shell: bash
         run: |
@@ -144,6 +148,7 @@ jobs:
               node tests\e2e\docai.e2e.mjs --out "$out\docai"; if ($LASTEXITCODE) { exit 1 }
             } else {
               node tests\e2e\full.pw.mjs --home "$fx\home" --out "$out\pw" --pw "$env:RUNNER_TEMP\pw"; if ($LASTEXITCODE) { exit 1 }
+              node tests\e2e\responsive.pw.mjs --out "$out\screens" --pw "$env:RUNNER_TEMP\pw"; if ($LASTEXITCODE) { exit 1 }
             }
           }
       - uses: actions/upload-artifact@v4   # tag, not a commit SHA: replace with the SHA Dependabot proposes

@@ -165,11 +165,20 @@ else
 fi
 [ "$DRY" = 1 ] && { say ""; say "Dry run: nothing was installed or changed."; exit 0; }
 
-# ---- 6. self-test ----
-step "Self-test (server.py --doctor)"
-( cd "$DEST" && "$RUNPY" server.py --doctor | head -n 30 | sed 's/^/  /' ) || say "  The self-test found a problem (see FAIL above). The README troubleshooting table explains each line."
+# ---- 6. self-test: a real 3-second scan of a temporary folder of known files ----
+step "Self-test"
+SELFTEST=0
+( cd "$DEST" && "$RUNPY" server.py --self-test ) | sed 's/^/  /'
+( cd "$DEST" && "$RUNPY" server.py --self-test >/dev/null 2>&1 ) || SELFTEST=1
+if [ "$SELFTEST" = 1 ]; then
+  REPORT="${TMPDIR:-/tmp}/aurasort-doctor.txt"
+  ( cd "$DEST" && "$RUNPY" server.py --doctor > "$REPORT" 2>&1 ) || true
+  say "  The self-test did not pass. A report is in $REPORT (no file names in it)."
+  say "  Send that file, or the output of this command, to the developer:  cd \"$DEST\" && $RUNPY server.py --doctor"
+fi
 say ""
 say "AuraSort $VER is installed in $DEST. It opens in your browser at http://localhost:8765/"
 say "  Update: run the same install command again.   Remove: sh \"$DEST/scripts/uninstall.sh\" (add --purge to also delete ~/.aurasort)"
 if [ "$OS" = Darwin ]; then say "  macOS: the first scan of Desktop/Documents/Downloads asks for permission. Allow it, or see 'Full Disk Access' in the README."; fi
 if [ "$START" = 1 ] && ask "Start AuraSort now?" y; then cd "$DEST" && exec "$RUNPY" server.py; fi
+[ "$SELFTEST" = 0 ] || exit 2   # installed, but the self-test needs a look

@@ -20,6 +20,9 @@ import traceback
 from . import config, index_db, platform_utils
 
 OK, WARN, FAIL = "ok", "warn", "fail"
+PROBLEM_SKIPS = ("no_access", "unreadable", "error", "bad_name", "vanished")   # skip reasons that mean "something blocked the scan"
+SELF_TEST_FILES = (("photo.jpg", b"\xff\xd8\xff\xe0 test"), ("notes.txt", b"hello"), ("song.mp3", b"ID3 test"), ("report.pdf", b"%PDF-1.4"),
+                   ("Tax 2025/résumé.docx", b"PK test"), ("archive.zip", b"PK\x03\x04"))
 
 
 def _user():
@@ -249,7 +252,8 @@ def _test_scan(r, folder=None):
         r.add("Test scan", OK, value)
     else:
         why = "; ".join(f"{e['title']}: {e['body']}" for e in res["explain"]) or "The folder has no files."
-        r.add("Test scan", FAIL if res["skipped"] else WARN, value, why)
+        problems = {k for k in res["skipped"] if k in PROBLEM_SKIPS}   # desktop.ini or hidden folders in an empty folder are not a failure
+        r.add("Test scan", FAIL if problems else WARN, value, why)
 
 
 # ---------------- entry points ----------------
@@ -278,6 +282,33 @@ def as_text(d):
     lines += ["", "No file names are included. Paths start at your home folder (~); your user name is shown as <user>.",
               "", "facts: " + json.dumps(d["facts"], ensure_ascii=False, default=str)]
     return "\n".join(lines)
+
+
+def self_test():
+    """Why: the installers' last step: scan a temporary folder of known files with the real scanner rules, so "it found N
+    files" is proven on this machine before anyone relies on it. Exit code 0 = passed."""
+    # In the home folder: the system temp folder is inside AppData on Windows, which the scanner (rightly) never enters.
+    tmp = tempfile.mkdtemp(prefix=".aurasort-selftest ", dir=str(config.HOME) if os.path.isdir(config.HOME) else None)
+    try:
+        for rel, data in SELF_TEST_FILES:
+            f = os.path.join(tmp, rel)
+            os.makedirs(os.path.dirname(f), exist_ok=True)
+            with open(f, "wb") as fh:
+                fh.write(data)
+        res = test_scan(tmp)
+    except Exception as ex:  # noqa: BLE001 - reported, never a crash in an installer
+        print(f"Self-test FAILED: {type(ex).__name__}: {mask(ex)}", flush=True)
+        res = None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    want = len(SELF_TEST_FILES)
+    if res and res["files"] == want:
+        print(f"Self-test passed: found {res['files']} files.", flush=True)
+        return 0
+    if res:
+        print(f"Self-test FAILED: found {res['files']} of {want} files; skipped {res['skipped']}; OS errors {res['errors_by_code']}.", flush=True)
+    print("Send the output of this command to the developer:  py server.py --doctor   (macOS/Linux: python3 server.py --doctor)", flush=True)
+    return 1
 
 
 def main(folder=None, as_json=False):

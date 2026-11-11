@@ -118,16 +118,27 @@ def _pdf_builtin(path):
 
 
 def _pdf(path, max_pages):
+    pages, text, pypdf_error = 0, "", None
     if PdfReader:
-        reader = PdfReader(path)
-        n, out = len(reader.pages), []
-        for page in reader.pages[:max_pages]:
-            out.append(page.extract_text() or "")
-            if sum(len(t) for t in out) > config.AI_MAX_CHARS:
-                break
-        pages, text = n, "\n".join(out)
-    else:
-        pages, text = _pdf_builtin(path)
+        try:
+            reader = PdfReader(path)
+            n, out = len(reader.pages), []
+            for page in reader.pages[:max_pages]:
+                out.append(page.extract_text() or "")
+                if sum(len(t) for t in out) > config.AI_MAX_CHARS:
+                    break
+            pages, text = n, "\n".join(out)
+        except Exception as ex:  # noqa: BLE001 - pypdf refuses some files the basic reader can still read
+            pypdf_error = ex
+    if not text.strip():   # no pypdf, or pypdf found no text (e.g. a PDF without font resources): try the basic reader too
+        try:
+            pages2, text2 = _pdf_builtin(path)
+        except ValueError:
+            if not PdfReader or pypdf_error is not None:
+                raise                      # neither reader can open it: a damaged file, reported as an error
+            pages2, text2 = 0, ""
+        if text2.strip() or not pages:
+            pages, text = pages2 or pages, text2
     ex = _cap(text, pages)
     if not ex.text.strip():
         ex.status, ex.note = "scanned", "No text layer: this looks like a scanned PDF (needs OCR)."

@@ -140,11 +140,11 @@ class Handler(BaseHTTPRequestHandler):
 
     # ---------------- checks ----------------
     def ok_host(self):
-        return self.headers.get("Host", "") in {f"{h}:{self.port}" for h in config.LOCAL_HOSTNAMES}
+        return self.headers.get("Host", "") in {f"{h}:{self.port}" for h in config.ALLOWED_HOST_NAMES}
 
     def ok_origin(self):
         o = self.headers.get("Origin")
-        return o is None or o in {f"http://{h}:{self.port}" for h in config.LOCAL_HOSTNAMES}
+        return o is None or o in {f"http://{h}:{self.port}" for h in config.ALLOWED_HOST_NAMES}
 
     def ok_token(self):
         """Why: every API call needs the per-run token in a header (constant-time compare); signed links are checked by their route."""

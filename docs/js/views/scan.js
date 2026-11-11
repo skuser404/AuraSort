@@ -86,7 +86,12 @@ async function startScan() {
     await API.scanStart(req);
     API.saveSettings({ drives: [...st.drives] }).catch(() => {});
     S.scanFail = null; S.scanResult = null; S.scan = { state: 'running', found: 0 }; render(false); pollScan();
-  } catch (e) { toastError(e, { retry: startScan, what: 'starting a scan', paths: req.roots }) }
+  } catch (e) {
+    if (e.code === 'no_storage_access' || e.code === 'no_quick_folders') {   // a card with the exact fix, not a passing toast
+      S.scanResult = { found: 0, skipped: '', explain: [{ code: e.code, title: e.message, body: e.hint }] }; render(false); return;
+    }
+    toastError(e, { retry: startScan, what: 'starting a scan', paths: req.roots });
+  }
 }
 function scanExplainHtml(r) { // Why: a scan that finds nothing (or nothing to sort) says why and what to do, never just zeros
   return `<div class="scan-explain" role="status"><p><b>${r.found ? `The last scan found ${fmt(r.found)} files.` : 'The last scan found no files.'}</b>${r.skipped ? ` <span class="mut">${esc(r.skipped)}</span>` : ''}</p>
