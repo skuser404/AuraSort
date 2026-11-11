@@ -49,7 +49,12 @@ _PREFIXES = None
 def canonical(path):
     """Why: user-supplied paths are resolved first: realpath expands Windows 8.3 short names (like PROGRA~1) and links,
     so no spelling of a path can slip past the protection rules."""
-    return os.path.realpath(os.path.abspath(os.path.expanduser(str(path))))
+    from .schema import strip_long_prefix
+    p = str(path)
+    if WIN:
+        p = strip_long_prefix(p)
+    out = os.path.realpath(os.path.abspath(os.path.expanduser(p)))
+    return strip_long_prefix(out) if WIN else out   # realpath can hand back "\\?\C:\..."; rules need the plain spelling
 
 
 def _prefixes():

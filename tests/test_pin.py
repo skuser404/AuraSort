@@ -138,7 +138,7 @@ class ActionTokenTest(PinCase):
         bodies = {"execute": {"ids": [self.fid], "dest": str(self.home / "Sorted")}, "trash": {"ids": [self.fid]}, "undo": {"id": "x"},
                   "quarantine": {"ids": [self.fid]}, "data/delete": {"confirm": "DELETE"}, "interrupted/resume": {"id": "x"},
                   "interrupted/clean": {"id": "x"}, "ai/key": {"key": "sk-test"}, "ai/reset": {}, "apptrash/restore": {"id": "x"},
-                  "pin/settings": {"pin_remember_min": 15}}
+                  "pin/settings": {"pin_remember_min": 15}, "elevate": {}}
         self.assertEqual(set(bodies), set(config.PIN_GUARDED), "every guarded route is covered")
         for route, body in bodies.items():
             st, r = self.call(f"/api/{route}", body, pin=False)

@@ -15,8 +15,8 @@ import time
 from . import classify, config, history, index_db, jobs, settings
 from .log import log
 from .schema import NOTHING_SELECTED, BadRequest
-from .platform_utils import (created_time, drive_media, drive_of, is_hidden_system, is_online_only, is_reparse_or_link, long_path,
-                             quick_folders, within)
+from .platform_utils import (created_time, dev_key, drive_media, drive_of, is_hidden_system, is_online_only, is_reparse_or_link,
+                             long_path, quick_folders, within)
 from .safety import canonical, folder_kind, is_project, is_protected
 
 _IGNORED_NAMES = config.IGNORED_FILE_NAMES
@@ -298,7 +298,7 @@ class _Walk:
         for r in roots:
             q.put((r, _project_above(r, self.never_project)))
         try:
-            dev = os.stat(roots[0]).st_dev
+            dev = dev_key(os.stat(roots[0]).st_dev)   # stored in SQLite: must fit a signed 64-bit integer
         except OSError:
             dev = None
         stop = threading.Event()

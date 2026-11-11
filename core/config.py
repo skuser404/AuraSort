@@ -6,7 +6,7 @@ from pathlib import Path
 # ---------------- product ----------------
 APP_NAME = "AuraSort"
 APP_SLUG = "aurasort"
-APP_VERSION = "1.1.1"
+APP_VERSION = "1.1.2"
 TAGLINE = "Make your files easier."
 SUBLINE = "Scan your whole PC, find anything fast, and sort files safely."
 
@@ -89,7 +89,7 @@ PIN_REMEMBER_CHOICES_MIN = (0, 1, 5, 15)   # "do not ask again for N minutes" (0
 # Guarded routes -> the action a PIN confirmation is issued for (server.py checks the token before the route runs).
 PIN_GUARDED = {"execute": "transfer", "trash": "trash", "undo": "undo", "quarantine": "transfer", "data/delete": "delete_data",
                "interrupted/resume": "transfer", "interrupted/clean": "trash", "ai/key": "ai_key", "ai/reset": "ai_key",
-               "apptrash/restore": "undo", "pin/settings": "settings"}
+               "apptrash/restore": "undo", "pin/settings": "settings", "elevate": "settings"}
 PIN_ACTIONS = frozenset(PIN_GUARDED.values())
 # Routes that work while locked (or before a PIN exists): start-up facts, the PIN screens themselves.
 PIN_OPEN_ROUTES = ("info", "pin/status", "pin/set", "pin/unlock", "pin/reset", "pin/lock")

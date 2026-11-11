@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
   Installs (or updates) AuraSort for the current user. No administrator rights are needed: do not use "Run as administrator".
 .DESCRIPTION
@@ -9,9 +9,9 @@
      runs a self-test (server.py --doctor) and offers to start AuraSort.
   Safe to run again: that is how you update. Nothing outside the install folder and the two shortcuts is changed.
 .EXAMPLE
-  irm https://github.com/skuser404/AuraSort/releases/latest/download/install.ps1 | iex
+  irm https://raw.githubusercontent.com/skuser404/AuraSort/main/scripts/install.ps1 | iex
 .EXAMPLE
-  & ([scriptblock]::Create((irm https://github.com/skuser404/AuraSort/releases/latest/download/install.ps1))) -WhatIf
+  irm https://raw.githubusercontent.com/skuser404/AuraSort/main/scripts/install.ps1 -OutFile install.ps1; powershell -ExecutionPolicy Bypass -File install.ps1 -WhatIf
 .EXAMPLE
   .\install.ps1 -Source C:\Downloads\aurasort-release -Yes      # offline: a folder holding aurasort.zip and SHA256SUMS
 #>
@@ -26,6 +26,24 @@ param(
   [switch]$NoShortcuts,
   [switch]$NoPackages
 )
+if ($null -eq $PSCmdlet) {
+  # Why: "irm ... | iex" runs this text without a script around it: $PSCmdlet is null (every ShouldProcess call failed with
+  # "You cannot call a method on a null-valued expression") and "exit" closed your PowerShell window, message and all.
+  # So save the installer and run it as a real script in a child PowerShell; this window stays open.
+  try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch { }
+  $ProgressPreference = 'SilentlyContinue'
+  $self = Join-Path ([IO.Path]::GetTempPath()) 'aurasort-install.ps1'
+  $from = if ($env:AURASORT_INSTALLER_URL) { $env:AURASORT_INSTALLER_URL } else { "https://raw.githubusercontent.com/$Repo/main/scripts/install.ps1" }
+  Invoke-WebRequest -UseBasicParsing $from -OutFile $self
+  $extra = @(); if ($env:AURASORT_INSTALL_ARGS) { $extra = @($env:AURASORT_INSTALL_ARGS -split ' ' | Where-Object { $_ }) }   # tests / CI only
+  Push-Location $HOME   # never System32
+  try { & (Get-Process -Id $PID).Path -NoProfile -ExecutionPolicy Bypass -File $self @extra } finally { Pop-Location }
+  $code = $LASTEXITCODE
+  Remove-Item $self -Force -ErrorAction SilentlyContinue
+  Write-Host "The installer finished (exit code $code). You can close this window."
+  $global:LASTEXITCODE = $code
+  return
+}
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'      # Invoke-WebRequest is many times slower on PowerShell 5.1 with the progress bar
 $zipName = 'aurasort.zip'
@@ -130,13 +148,24 @@ function Get-Release([string]$work) {
   } else {
     $base = if ($Version -eq 'latest') { "https://github.com/$Repo/releases/latest/download" } else { "https://github.com/$Repo/releases/download/$Version" }
     Say "  Downloading $base/$zipName"
+    $released = $false
     try {
       Invoke-WebRequest -UseBasicParsing "$base/$zipName" -OutFile $zip
       Invoke-WebRequest -UseBasicParsing "$base/SHA256SUMS" -OutFile $sums
-    } catch {
-      Manual "The download failed ($($_.Exception.Message)). Check your internet connection, or that a release exists at https://github.com/$Repo/releases" ''
-      Say '  Manual alternative (needs Git):  cd $HOME;  git clone https://github.com/skuser404/AuraSort.git;  cd AuraSort;  py -m pip install --user -r requirements.txt;  py server.py'
-      throw
+      $released = $true
+    } catch { Say "  No release download ($($_.Exception.Message))." }
+    if (-not $released) {
+      # Why: no published release (or no release asset yet): fall back to GitHub's own source ZIP; Git is not needed.
+      $ref = if ($Version -eq 'latest') { 'refs/heads/main' } else { "refs/tags/$Version" }
+      $src = "https://github.com/$Repo/archive/$ref.zip"
+      Say "  Downloading the source code instead: $src"
+      Write-Warning 'There is no release checksum for this download, so it is not checksum-checked (it still comes from github.com over HTTPS).'
+      try { Invoke-WebRequest -UseBasicParsing $src -OutFile $zip } catch {
+        Manual "The download failed ($($_.Exception.Message)). Check your internet connection, or that https://github.com/$Repo exists." ''
+        Say '  Manual alternative (needs Git):  cd $HOME;  git clone https://github.com/skuser404/AuraSort.git;  cd AuraSort;  py -m pip install --user -r requirements.txt;  py server.py'
+        throw
+      }
+      return $zip
     }
   }
   $want = Get-Content $sums | Where-Object { $_ -match "\s\*?$([regex]::Escape($zipName))$" } | Select-Object -First 1

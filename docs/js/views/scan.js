@@ -93,11 +93,40 @@ async function startScan() {
     toastError(e, { retry: startScan, what: 'starting a scan', paths: req.roots });
   }
 }
-function scanExplainHtml(r) { // Why: a scan that finds nothing (or nothing to sort) says why and what to do, never just zeros
-  return `<div class="scan-explain" role="status"><p><b>${r.found ? `The last scan found ${fmt(r.found)} files.` : 'The last scan found no files.'}</b>${r.skipped ? ` <span class="mut">${esc(r.skipped)}</span>` : ''}</p>
-    ${r.explain.map(x => `<div class="note explain">${ic('alert')}<div><h3>${esc(x.title)}</h3><p>${esc(x.body)}</p></div></div>`).join('')}
-    <div class="row" data-css="margin-top:10px"><button class="btn sm ghost" data-a="nav" data-v="settings">${ic('check')} Open Diagnostics</button></div></div>`;
+function scanExplainHtml(r) { // Why: a scan that finds nothing, or that was refused folders, says why and what to do: never a bare 0
+  const reasons = (r.reasons || []).map(x => `${fmt(x.n)} ${x.label}`).join(' · ');
+  const blocked = !r.found || r.noaccess > 0, win = S.info && S.info.os === 'windows' && !S.info.admin;
+  return `<div class="scan-explain card" role="status"><p><b>${r.found ? `Found ${fmt(r.found)} files` : 'Found no files'}</b>${r.dirs != null ? ` in ${fmt(r.dirs)} folders` : ''}.${reasons ? ` <span class="mut">Skipped: ${esc(reasons)}.</span>` : ''}</p>
+    ${(r.explain || []).map(x => `<div class="note explain">${ic('alert')}<div><h3>${esc(x.title)}</h3><p>${esc(x.body)}</p></div></div>`).join('')}
+    ${blocked ? `<div class="row" data-css="margin-top:10px;gap:8px"><button class="btn sm pri" data-a="perm-pick">${ic('folder')} Choose folders to scan</button>
+      <button class="btn sm ghost" data-a="perm-why">${ic('info')} Why was access denied?</button>
+      ${win ? `<button class="btn sm ghost" data-a="perm-elevate">${ic('shield')} Restart with administrator permission</button>` : ''}
+      <button class="btn sm ghost" data-a="nav" data-v="settings">${ic('check')} Diagnostics</button>
+      ${r.found ? `<button class="btn sm ghost" data-a="nav" data-v="dashboard">${ic('dash')} Dashboard</button>` : ''}</div>
+      <p class="mut" data-css="margin-top:8px">Your Downloads, Documents, Desktop, Pictures, Videos and Music never need administrator rights.</p>`
+    : `<div class="row" data-css="margin-top:10px"><button class="btn sm ghost" data-a="nav" data-v="settings">${ic('check')} Diagnostics</button></div>`}</div>`;
 }
+ACT['perm-pick'] = () => { const st = scanSetup(); st.mode = 'deep'; st.drives = new Set(); render(false); ACT['pick-roots']() };   // your own folders, picked one by one
+ACT['perm-why'] = () => { // Why: plain steps for the usual reasons a folder is refused, for this system first
+  const os = (S.info && S.info.os) || '';
+  const steps = {
+    windows: '<li><b>Controlled Folder Access</b>: Windows Security &gt; Virus &amp; threat protection &gt; Manage ransomware protection &gt; Allow an app through Controlled folder access &gt; add Python (python.exe / py.exe).</li><li><b>Antivirus</b>: allow Python, or add the AuraSort folder as trusted.</li><li><b>OneDrive</b>: online-only files are listed but never downloaded; right-click a folder &gt; Always keep on this device to read them.</li><li><b>Other people\'s folders and system drives</b> (for example C:\\Users\\someone-else) need administrator permission; your own folders never do.</li>',
+    mac: '<li><b>Full Disk Access</b>: System Settings &gt; Privacy &amp; Security &gt; Full Disk Access &gt; turn on Terminal (or the Python you started AuraSort with), then quit and reopen it.</li><li><b>Files and Folders</b>: allow Desktop, Documents and Downloads when macOS asks.</li>',
+    android: '<li>Run <code>termux-setup-storage</code> in Termux and tap <b>Allow</b> (Android 11 and newer: <i>Allow management of all files</i>), then press Scan again.</li>',
+    linux: '<li>Scan folders your user owns, or check a folder\'s permissions with <code>ls -ld &lt;folder&gt;</code>.</li>'
+  };
+  modal(`<h2>Why was access denied?</h2><p class="mut">${esc(APP.name)} only reads names, sizes and dates. The system refused it for some folders. The usual reasons:</p>
+    <ul>${steps[os] || steps.linux}</ul><p class="mut">Run Settings &gt; Diagnostics for the exact folders and error codes (no file names are included).</p>
+    <div class="row" data-css="justify-content:flex-end;margin-top:12px"><button class="btn" data-a="cf-no">Close</button></div>`);
+  ACT['cf-no'] = () => closeModal();
+};
+ACT['perm-elevate'] = async () => { // Why: optional, off the main path; Windows asks first (UAC); declining changes nothing
+  const ok = await confirmDialog({ title: 'Restart with administrator permission?', ok: 'Restart', check: 'I understand',
+    body: `<p>Only needed for other users\' folders or whole system drives. <b>Your own files never need it.</b></p><p>Windows will ask you to confirm. A new ${esc(APP.name)} window opens and this page stops working; Windows system folders are still skipped.</p>` });
+  if (!ok) return;
+  try { const r = await API.elevate(); toast(r.ok ? 'Accept the Windows prompt; a new window will open.' : 'Nothing changed: the Windows prompt was declined.', r.ok ? 'ok' : '') }
+  catch (e) { toastError(e) }
+};
 function scanFailHtml(f) { // Why: a failed scan explains itself on the page, with a way forward (Try again, Copy details)
   return `<div class="note err scan-fail" role="alert">${ic('alert')}<div><b>The last scan stopped.</b> ${esc(f.message || ERROR_TEXT.internal)}${f.hint ? ` <span class="mut">${esc(f.hint)}</span>` : ''}
     <div class="row"><button class="btn sm" data-a="scan-start">Try again</button><button class="btn sm ghost" data-a="scan-fail-details">Copy details</button></div></div></div>`;
@@ -122,9 +151,10 @@ async function scanDone(s) {
   if (s.state === 'done') {
     notify(`Scan finished: ${fmt(s.found)} files`, `${sz(s.bytes)} · ${dur(s.elapsed)}`, 'scan'); toast(`Scan finished: ${fmt(s.found)} files (${sz(s.bytes)})${s.skipped_total ? `, ${fmt(s.skipped_total)} skipped` : ''}`, 'ok');
     S.extData = null; await refreshIndex();
-    S.scanResult = (s.explain && s.explain.length) ? { found: s.found, explain: s.explain, skipped: skippedText(s) } : null;
+    const noaccess = (s.skipped || {}).no_access || 0;
+    S.scanResult = ((s.explain && s.explain.length) || noaccess) ? { found: s.found, dirs: s.dirs, noaccess, reasons: s.skipped_reasons || [], explain: s.explain || [], skipped: skippedText(s) } : null;
     const p = S.pending; S.pending = null;
-    if (!s.found) { S.view = 'scan'; render(false); syncURL('replace') }   // stay here: the explanation is the next step, not an empty dashboard
+    if (!s.found || noaccess) { S.view = 'scan'; render(false); syncURL('replace') }   // stay here: the card (what was refused, what to do) is the next step
     else if (p && p.has) { applyParams(p); render(); syncURL('replace'); syncSearchBox() } else go('dashboard');
   } else if (s.state === 'cancelled') { toast('Scan cancelled. Your previous index is kept.'); render(false) }
   else {

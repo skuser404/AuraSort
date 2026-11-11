@@ -661,7 +661,8 @@ def _ensure_dir(c, path, kind):
     if row:
         return row[0]
     try:
-        dev = os.stat(path).st_dev
+        from .platform_utils import dev_key
+        dev = dev_key(os.stat(path).st_dev)
     except OSError:
         dev = None
     seen = c.execute("SELECT MAX(id) FROM scans").fetchone()[0]

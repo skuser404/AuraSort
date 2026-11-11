@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
   Removes AuraSort (the app folder and its shortcuts). Your own files are never touched.
 .DESCRIPTION

@@ -185,6 +185,29 @@ def r_pin_settings(h, qs, b):
     h.send(200, {k: v for k, v in settings.update(**{k: b[k] for k in settings.SECURITY_KEYS if k in b}).items() if k in settings.SECURITY_KEYS})
 
 
+# ---------------- optional: restart with administrator permission (Windows) ----------------
+def _hand_over():
+    """Why: the elevated copy waits for this one's lock; release it and stop so it can take over."""
+    instance.release()
+    log.info("handing over to the elevated AuraSort")
+    os._exit(0)
+
+
+@route(R, "POST", "elevate")
+def r_elevate(h, qs, b):
+    """Why: only for other users' folders or system drives (your own files never need it); Windows asks first (UAC).
+    Declining changes nothing. Windows system folders stay skipped even with administrator permission."""
+    if not config.WIN:
+        raise ApiError(400, "This is only available on Windows.", "not_supported")
+    if platform_utils.is_admin():
+        raise ApiError(400, "AuraSort already runs with administrator permission.", "already_admin")
+    args = [os.path.abspath(__file__), "--wait-for-lock"]
+    if not platform_utils.relaunch_elevated(args, start_folder()):
+        return h.send(200, {"ok": False, "declined": True})
+    h.send(200, {"ok": True})
+    threading.Timer(1.0, _hand_over).start()
+
+
 # ---------------- AuraSort's own trash (Android; files kept by "Replace") ----------------
 @route(R, "GET", "apptrash")
 def r_apptrash(h, qs, b):
@@ -276,7 +299,7 @@ def r_disk(h, qs, b):
     while not os.path.exists(p) and os.path.dirname(p) != p:
         p = os.path.dirname(p)
     u = shutil.disk_usage(p)
-    h.send(200, dict(path=p, total=u.total, used=u.used, free=u.free, dev=os.stat(p).st_dev))
+    h.send(200, dict(path=p, total=u.total, used=u.used, free=u.free, dev=platform_utils.dev_key(os.stat(p).st_dev)))
 
 
 # ---------------- scanning ----------------
@@ -584,7 +607,7 @@ def r_plan(h, qs, b):
         while not os.path.exists(p) and os.path.dirname(p) != p:
             p = os.path.dirname(p)
         try:
-            dev = os.stat(p).st_dev
+            dev = platform_utils.dev_key(os.stat(p).st_dev)   # compared with the index's stored drive ids
         except OSError:
             dev = None   # the destination drive is gone: the preview counts every file as a copy
     h.send(200, index_db.plan(_plan_filters(b), dev))
@@ -1099,6 +1122,12 @@ def prepare():
     index_db.init()
 
 
+def start_folder():
+    """Why: a terminal opened 'as administrator' starts in C:\\Windows\\System32. Nothing may depend on the start folder,
+    so the server works from the user's home folder."""
+    return str(config.HOME) if os.path.isdir(config.HOME) else os.getcwd()
+
+
 def console_utf8():
     """Why: a Windows console in cp1252/cp437 crashes print() on a non-English name; replace what it cannot show instead."""
     for stream in (sys.stdout, sys.stderr):
@@ -1131,6 +1160,7 @@ def main():
     ap.add_argument("--doctor", action="store_true", help="check this computer (Python, data folder, SQLite, folders, a 3-second test scan) and exit")
     ap.add_argument("--folder", default="", help="with --doctor: the folder to test-scan (default: the first Quick Scan folder)")
     ap.add_argument("--json", action="store_true", help="with --doctor: print JSON instead of text")
+    ap.add_argument("--wait-for-lock", action="store_true", help=argparse.SUPPRESS)   # set by "Restart with administrator permission"
     ap.add_argument("--self-test", action="store_true", help="scan a temporary folder of known files and say whether all were found")
     a = ap.parse_args()
     if a.host not in config.LOCAL_HOSTNAMES:
@@ -1142,7 +1172,16 @@ def main():
         from core import doctor
         sys.exit(doctor.self_test())
     setup_log()
-    if not instance.acquire():
+    try:
+        os.chdir(start_folder())
+    except OSError:
+        pass
+    if a.wait_for_lock:   # the copy that asked for elevation is handing over: give it a moment to stop
+        for _ in range(80):
+            if instance.acquire():
+                break
+            time.sleep(0.25)
+    if not instance.held() and not instance.acquire():
         port = instance.running_port()
         url = f"http://localhost:{port}/" if port else ""
         print(f"\n  {config.APP_NAME} is already running{' at ' + url if url else ''}.\n"

@@ -2,6 +2,34 @@
 
 All notable changes to AuraSort. Dates are YYYY-MM-DD.
 
+## [1.1.2] - 2026-11-11
+
+### Fixed
+- **Windows, Python 3.12 and newer: a Deep Scan estimated thousands of files and then found 0** ("0 files, 1 folders
+  skipped"). Python 3.12+ reports a drive's full 64-bit volume serial number; on drives whose serial has the top bit set
+  it does not fit SQLite's signed 64-bit integer, so storing the first folder raised `OverflowError` and every folder was
+  skipped. Drive ids are now folded into the signed range (`core/platform_utils.py` dev_key) wherever they are stored or
+  compared. Python 3.10 was not affected, which is why only some computers saw it.
+- **Android: Move and Copy failed with "Operation not permitted"** for every file on phone storage. Android's shared
+  storage refuses hard links and copying file dates; the copier now falls back to a rename and keeps the copy without
+  the dates. The default destination is now on phone storage (`/storage/emulated/0/AuraSort Sorted`), not inside Termux.
+- **The Windows one-line installer did not work through `irm ... | iex`**: the UTF-8 byte-order mark made the script
+  unreadable ("Unexpected token"), `$PSCmdlet` is not available there ("You cannot call a method on a null-valued
+  expression"), and `exit` closed the window with the message. The installer now runs itself as a real script in a
+  child PowerShell; the window stays open. With no published release it installs GitHub's source ZIP of `main` (said
+  clearly, without a checksum); Git is not needed. `install.sh` does the same.
+- Paths such as `C:`, `c:/` and `\\?\C:\` are normalised before protection checks (a long-path prefix can no longer
+  slip past them), and the server always starts in your home folder, also when launched from `C:\Windows\System32`.
+- A permission error now names the likely cause (Android storage access, Windows Controlled Folder Access, file
+  permissions) instead of only `[Errno 1]` / `[WinError 5]`.
+
+### Added
+- A card on the Scan page whenever a scan finds nothing or folders refused access: exact counts (files, folders,
+  skipped by reason), **Choose folders to scan**, **Why was access denied?** and, on Windows only and optional,
+  **Restart with administrator permission** (Windows asks first; declining changes nothing; PIN-protected).
+- The README install command is now the `raw.githubusercontent.com/.../main/scripts/install.ps1` address (it works
+  without a release); CI runs that exact line from `C:\Windows\System32` in PowerShell 5.1 and 7.
+
 ## [1.1.1] - 2026-11-11
 
 ### Fixed

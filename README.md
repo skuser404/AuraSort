@@ -56,16 +56,26 @@ Close the terminal and open a new one afterwards, so it sees the new programs. (
 **Step 2: the one-line installer** (recommended):
 
 ```powershell
-irm https://github.com/skuser404/AuraSort/releases/latest/download/install.ps1 | iex
+irm https://raw.githubusercontent.com/skuser404/AuraSort/main/scripts/install.ps1 | iex
 ```
 
+If PowerShell refuses scripts, or you are in the old *Command Prompt* (`cmd.exe`), use this form instead (it changes the
+policy for this one run only):
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/skuser404/AuraSort/main/scripts/install.ps1 | iex"
+```
+
+(Second option, once a release is published: `irm https://github.com/skuser404/AuraSort/releases/latest/download/install.ps1 | iex`.)
+
 It checks for Python (and offers to install it with winget if missing), downloads the latest release, checks its SHA-256
-against the release's `SHA256SUMS` (and refuses to install on a mismatch), installs it to `%LOCALAPPDATA%\AuraSort`,
+against the release's `SHA256SUMS` (and refuses to install on a mismatch; if no release is published yet it downloads
+GitHub's source ZIP of the `main` branch instead and says so, without a checksum, and Git is not needed), installs it to `%LOCALAPPDATA%\AuraSort`,
 installs the optional packages for your user, adds **Start Menu and Desktop shortcuts**, runs a self-test (a real scan
 of a temporary folder: it must print `Self-test passed: found 6 files`) and offers to start AuraSort. On an old Windows 10 that says *Could not create SSL/TLS secure channel*, run this line first:
 `[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072`.
 To see every step without changing anything:
-`& ([scriptblock]::Create((irm https://github.com/skuser404/AuraSort/releases/latest/download/install.ps1))) -WhatIf`
+`cd $HOME; irm https://raw.githubusercontent.com/skuser404/AuraSort/main/scripts/install.ps1 -OutFile install.ps1; powershell -ExecutionPolicy Bypass -File install.ps1 -WhatIf`
 
 **Step 3: or install manually with Git:**
 
@@ -98,7 +108,7 @@ macOS is often too old, 3.9, and first asks to install the Command Line Tools.)
 **Step 2: the one-line installer** (Apple Silicon and Intel):
 
 ```sh
-curl -fsSL https://github.com/skuser404/AuraSort/releases/latest/download/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/skuser404/AuraSort/main/scripts/install.sh | sh
 ```
 
 It does the same as on Windows, installs to `~/.local/share/aurasort` with its packages in a private virtual
@@ -137,7 +147,7 @@ Trash uses Finder (so **Put Back** works); the first time, macOS asks to allow c
 **Step 2: the one-line installer:**
 
 ```sh
-curl -fsSL https://github.com/skuser404/AuraSort/releases/latest/download/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/skuser404/AuraSort/main/scripts/install.sh | sh
 ```
 
 It adds an `aurasort` command and an applications-menu entry. **Step 3: manual:** the same commands as
@@ -228,8 +238,16 @@ between drives until you make them available offline.
 
 ## If a scan finds 0 files
 
-AuraSort never ends a scan with silent zeros: the Scan page lists what was skipped and why (no permission, links,
-protected folders, online-only files…) and what to do. To check a computer completely, run the **doctor** in the
+AuraSort never ends a scan with silent zeros. When a scan finds nothing, or some folders refused access, the Scan page
+shows a card with the exact counts (files found, folders scanned, and folders skipped for each reason) and three
+choices:
+
+- **Choose folders to scan**: pick your own folders (Downloads, Documents, Desktop, Pictures, Videos, Music). These
+  never need administrator rights.
+- **Why was access denied?**: the usual causes for your system (Windows Controlled Folder Access, antivirus, OneDrive
+  online-only files; macOS Full Disk Access; Android `termux-setup-storage`) and how to fix each one.
+- **Restart with administrator permission** (Windows only, optional): only for other users' folders or whole system
+  drives. Windows asks you first. If you decline, nothing changes. Windows system folders are still skipped. To check a computer completely, run the **doctor** in the
 AuraSort folder (or use **Settings > Diagnostics** and *Copy diagnostics*):
 
 ```sh
@@ -288,21 +306,24 @@ medical documents. See [AI_DATA_NOTICE.md](AI_DATA_NOTICE.md).
 
 | Problem | Fix |
 |---|---|
-| `irm ... install.ps1` says **404 Not Found** | Use exactly `https://github.com/skuser404/AuraSort/releases/latest/download/install.ps1`. Older links with a version in the path (`.../v1.0.0/scripts/install.ps1`) pointed at a release tag that was never published. |
+| `irm ... install.ps1` says **404 Not Found** | Use exactly `https://raw.githubusercontent.com/skuser404/AuraSort/main/scripts/install.ps1` (the repository name is case-sensitive: `AuraSort`). The `releases/latest/download/...` link only works once a release is published, and older links with a version in the path (`.../v1.0.0/scripts/install.ps1`) pointed at a tag that was never published. |
+| The installer window **closes by itself**, or says *You cannot call a method on a null-valued expression* / *Unexpected token* | Fixed in 1.1.2: older installers did not work through `irm ... \| iex` on Windows PowerShell 5.1. Run the command above again (it downloads the current installer). |
 | `git clone` says **Permission denied** / `Could not create work tree` | The terminal is in `C:\WINDOWS\System32` (it was opened with *Run as administrator*). Close it, open PowerShell normally, run `cd $HOME`, then clone again. |
 | `cd aurasort` says **Cannot find path**, or `py server.py` says **can't open file 'server.py'** | You are in a different folder. Run `cd $HOME\AuraSort` (Windows) or `cd ~/AuraSort`, then `py server.py`. Check with `dir server.py` (or `ls server.py`). |
 | `'py' is not recognized` | Python is not installed, or the terminal was open while it was installed: run `winget install --id Python.Python.3.12 --exact --scope user`, then open a **new** terminal. |
 | `python` opens the **Microsoft Store** / says *Python was not found* | That is Windows' Store shortcut, not Python. Install Python as above, or turn the shortcut off in *Settings > Apps > Advanced app settings > App execution aliases*. |
-| `running scripts is disabled on this system` | Only when running a downloaded `.ps1` file: `powershell -ExecutionPolicy Bypass -File install.ps1` (affects only that run). The `irm ... \| iex` line is not affected. |
+| `running scripts is disabled on this system` | Use `powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/skuser404/AuraSort/main/scripts/install.ps1 \| iex"`, or for a downloaded file `powershell -ExecutionPolicy Bypass -File install.ps1` (both affect only that run). |
 | SmartScreen or antivirus warns about `start.bat` or the installer | They only run `py server.py`. Choose *More info > Run anyway*, or start AuraSort from a terminal. |
 | `Address already in use` / page does not open | Another program uses port 8765. AuraSort tries the next ports and prints the address it uses; or run `py server.py --port 9000` and open `http://localhost:9000/`. |
-| **A scan finds 0 files**, or numbers look wrong | Read the explanation on the Scan page, then run `py server.py --doctor` and send its output (see [If a scan finds 0 files](#if-a-scan-finds-0-files)). |
+| **A scan finds 0 files**, or numbers look wrong | Read the card on the Scan page, then run `py server.py --doctor` in `%LOCALAPPDATA%\AuraSort` (or *Settings > Diagnostics > Copy report*) and send its output (see [If a scan finds 0 files](#if-a-scan-finds-0-files)). |
+| Windows, Python 3.12 or newer: Deep Scan estimates thousands of files, then says **0 files, 1 folders skipped** | Fixed in 1.1.2: some drives' 64-bit volume numbers did not fit in the index, so every folder was skipped. Update with the installer command above. |
 | Windows: folders show "no permission" | Windows Security > Virus & threat protection > *Manage ransomware protection* (Controlled Folder Access), or your antivirus, blocks Python: allow `python.exe` / `py.exe`. Administrator rights are **not** the fix. |
 | macOS: folders show "no permission" | Allow Terminal (or your Python) in *System Settings > Privacy & Security > Files and Folders* or *Full Disk Access*, then quit and reopen Terminal. |
 | macOS: `python3` asks to install *command line developer tools*, or says it is 3.9 | Install a current Python: `brew install python` (or python.org), then use the installer above. |
 | Linux/macOS: `pip` says **externally-managed-environment** | Use a virtual environment as in the manual steps (`python3 -m venv .venv`), or the installer, which does that for you. |
 | Python 3.14: `pip install` tries to build Pillow and fails | Fixed in 1.1.0: `requirements.txt` now pins Pillow 12.3.0, which has ready-made wheels for Python 3.10 to 3.14. Pull or reinstall. |
 | Android: "Your phone's folders cannot be seen yet" / 0 files | Termux has no storage access. Run `termux-setup-storage`, tap **Allow** (Android 11+: *Allow management of all files*), then press Scan again. |
+| Android: Move or Copy fails with **Operation not permitted** | Fixed in 1.1.2: phone storage refuses hard links and copying file dates, so every copy failed. Update: `cd ~/AuraSort && git pull`. |
 | The installer says "Self-test did not pass" | It saved a report (no file names) and printed its location: send that file, or the output of `py server.py --doctor`. |
 | Forgot the PIN | *Forgot PIN?* on the unlock screen, type RESET. AuraSort's own data is wiped (never your files) and you set a new PIN. |
 | "Too many wrong PINs" | Wait for the countdown (30 s, then 1, 5, 15 minutes). Restarting AuraSort does not reset it. |

@@ -182,8 +182,15 @@ def _place(tmp, dst_dir, name):
             if config.WIN:
                 os.rename(long_path(tmp), long_path(final))
             else:
-                os.link(tmp, final)
-                os.unlink(tmp)
+                try:
+                    os.link(tmp, final)
+                    os.unlink(tmp)
+                except FileExistsError:
+                    raise
+                except OSError:   # no hard links here (Android shared storage, FAT/exFAT): rename to the name just checked
+                    if os.path.lexists(final):
+                        continue
+                    os.rename(tmp, final)
             return final
         except FileExistsError:
             continue
@@ -217,7 +224,10 @@ def copy_verified(src, dst_dir, name, verify_mode="full", move=False, on_bytes=N
             _fsync(tmp)
         if not verify(src, tmp, size, verify_mode):
             raise CopyError("the copy did not match the original, so the original was kept")
-        shutil.copystat(src, long_path(tmp), follow_symlinks=False)
+        try:
+            shutil.copystat(src, long_path(tmp), follow_symlinks=False)
+        except OSError:   # Android shared storage (and some network shares) refuse dates/permissions: the content is verified
+            pass
         final = _place(tmp, dst_dir, name)
     except BaseException:
         _drop(tmp)

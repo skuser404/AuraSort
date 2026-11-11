@@ -1,6 +1,6 @@
 #!/bin/sh
 # Installs (or updates) AuraSort for the current user on macOS (Apple Silicon and Intel) or Linux. No sudo needed.
-#   curl -fsSL https://github.com/skuser404/AuraSort/releases/latest/download/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/skuser404/AuraSort/main/scripts/install.sh | sh
 #   curl -fsSL .../install.sh | sh -s -- --yes        answer yes to every question
 #   sh install.sh --dry-run                           show what would happen, change nothing
 #   sh install.sh --source ./release                  offline: a folder holding aurasort.zip and SHA256SUMS
@@ -95,11 +95,19 @@ else
   say "  $BASE/$ZIP"
   fetch() { if command -v curl >/dev/null 2>&1; then curl -fsSL -o "$2" "$1"; else wget -q -O "$2" "$1"; fi; }
   if ! fetch "$BASE/$ZIP" "$WORK/$ZIP" || ! fetch "$BASE/SHA256SUMS" "$WORK/SHA256SUMS"; then
-    manual "The download failed. Check your connection, or that a release exists at https://github.com/$REPO/releases" ""
-    say "  Manual alternative:  cd ~ && git clone https://github.com/skuser404/AuraSort.git && cd AuraSort && $PY server.py"
-    exit 1
+    # Why: no published release (or no release asset yet): fall back to GitHub's own source ZIP; Git is not needed.
+    if [ "$VERSION" = latest ]; then REF="refs/heads/main"; else REF="refs/tags/$VERSION"; fi
+    say "  No release download. Downloading the source code instead: https://github.com/$REPO/archive/$REF.zip"
+    say "  Warning: there is no release checksum for this download, so it is not checksum-checked (it still comes from github.com over HTTPS)."
+    if ! fetch "https://github.com/$REPO/archive/$REF.zip" "$WORK/$ZIP"; then
+      manual "The download failed. Check your connection, or that https://github.com/$REPO exists." ""
+      say "  Manual alternative:  cd ~ && git clone https://github.com/skuser404/AuraSort.git && cd AuraSort && $PY server.py"
+      exit 1
+    fi
+    UNCHECKED=1
   fi
 fi
+if [ -z "${UNCHECKED:-}" ]; then
 WANT="$(grep " \*\{0,1\}$ZIP\$" "$WORK/SHA256SUMS" | awk '{print $1}' | head -n 1)"
 [ -n "$WANT" ] || { say "SHA256SUMS has no line for $ZIP. Not installing."; exit 1; }
 if command -v sha256sum >/dev/null 2>&1; then GOT="$(sha256sum "$WORK/$ZIP" | awk '{print $1}')"
@@ -107,6 +115,7 @@ elif command -v shasum >/dev/null 2>&1; then GOT="$(shasum -a 256 "$WORK/$ZIP" |
 else GOT="$("$PY" -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$WORK/$ZIP")"; fi
 if [ "$GOT" != "$WANT" ]; then rm -f "$WORK/$ZIP"; say "Checksum mismatch for $ZIP (expected $WANT, got $GOT). Not installing."; exit 1; fi
 say "  Checksum OK ($GOT)"
+fi
 "$PY" -m zipfile -e "$WORK/$ZIP" "$WORK/unpacked"     # no 'unzip' needed
 ROOT="$WORK/unpacked"
 set -- "$ROOT"/*

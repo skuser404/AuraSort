@@ -52,6 +52,7 @@ const RealApi = {
   deleteData: () => guarded('delete_data', 'data/delete', { confirm: 'DELETE' }),
   pinStatus: () => call('pin/status'), pinSet: b => call('pin/set', b), pinUnlock: b => call('pin/unlock', b), pinLock: () => call('pin/lock', {}),
   pinVerify: b => call('pin/verify', b), pinReset: () => call('pin/reset', { confirm: 'RESET' }), pinSettings: b => guarded('settings', 'pin/settings', b),
+  elevate: () => guarded('settings', 'elevate', {}),
   appTrash: () => call('apptrash'), appTrashRestore: id => guarded('undo', 'apptrash/restore', { id }),
   aiClear: () => call('ai/clear', {}), aiReset: () => guarded('ai_key', 'ai/reset', {}), aiResults: p => call('ai/results?' + qs(p)), aiIds: p => call('ai/ids?' + qs(p))
 };

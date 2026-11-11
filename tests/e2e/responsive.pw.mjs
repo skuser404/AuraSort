@@ -104,6 +104,55 @@ try {
     await ctx.close();
   }
 
+  /* ---------- a scan that was refused folders: the card with counts and the three choices (360 px) ---------- */
+  {
+    const { ctx, page } = await openApp(360, 800, true);
+    await go(page, 'scan');
+    const refused = { state: 'done', found: 0, dirs: 1, bytes: 0, elapsed: 1, roots: ['C:\\'], skipped: { no_access: 1 }, skipped_total: 1,
+      skipped_reasons: [{ code: 'no_access', label: 'no permission', n: 1 }], drives: [], notes_list: [],
+      explain: [{ code: 'windows_blocked', title: 'Windows refused access to the folders.', body: 'Allow Python in Controlled Folder Access.' }] };
+    const elevateCalls = [];
+    page.on('request', r => { if (r.url().includes('/api/elevate')) elevateCalls.push(r.url()) });
+    await page.route('**/api/scan/status', r => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(refused) }));
+    await page.evaluate(() => pollScan());
+    await page.waitForSelector('.scan-explain', { timeout: 15000 });
+    const card = (await page.textContent('.scan-explain')).replace(/\s+/g, ' ');
+    check(/Found no files in 1 folders/.test(card) && /Skipped: 1 no permission/.test(card), '360px: the card shows the exact counts (files, folders, skipped by reason)', card.slice(0, 200));
+    check(await page.isVisible('[data-a=perm-pick]') && await page.isVisible('[data-a=perm-why]'), '360px: "Choose folders to scan" and "Why was access denied?" are offered');
+    const info = await page.evaluate(() => ({ os: S.info.os, admin: S.info.admin }));
+    check((await page.isVisible('[data-a=perm-elevate]')) === (info.os === 'windows' && !info.admin), `360px: "Restart with administrator permission" only on Windows without it (os ${info.os}, admin ${info.admin})`);
+    await page.click('[data-a=perm-why]');
+    const why = await page.textContent('#modal');
+    check(info.os !== 'windows' || /Controlled Folder Access/.test(why), '360px: "Why was access denied?" names this system\'s usual causes', why.slice(0, 160));
+    await page.click('#modal [data-a=cf-no]');
+    if (info.os === 'windows' && !info.admin) {
+      await page.click('[data-a=perm-elevate]');
+      check(/administrator permission/.test(await page.textContent('#modal')), '360px: the administrator restart asks first');
+      await page.click('#modal [data-a=cf-no]'); await page.waitForTimeout(300);
+      check(elevateCalls.length === 0, '360px: cancelling the administrator restart changes nothing (no request sent)');
+    }
+    await page.click('[data-a=perm-pick]');
+    check(await page.waitForSelector('#modal:not([hidden])', { timeout: 8000 }).then(() => true, () => false), '360px: "Choose folders to scan" opens the folder picker');
+    await page.keyboard.press('Escape');
+    const o = await overflow(page);
+    check(o.scroll <= o.W && !o.out.length, '360px: the card fits without sideways scrolling', JSON.stringify(o.out));
+    await page.unroute('**/api/scan/status');
+    // Move / Copy / Delete are always offered on a phone: in the selection bar and in the preview, on screen and not covered
+    await go(page, 'media');
+    const reach = sel => page.evaluate(s => { const el = document.querySelector(s); if (!el) return 'missing';
+      el.scrollIntoView({ block: 'center' }); const r = el.getBoundingClientRect(), top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth && top && (top === el || el.contains(top)) ? 'ok' : 'not reachable' }, sel);
+    await page.check('#view input[data-a=sel]');
+    const bar = await Promise.all(['act-move', 'act-copy', 'act-trash'].map(a => reach(`#selbar [data-a=${a}]`)));
+    check(bar.every(x => x === 'ok'), '360px: the selection bar offers Move, Copy and Delete, on screen and clickable', bar.join(','));
+    await page.click('[data-a=selclear]');
+    await page.evaluate(() => ACT.preview({ dataset: { id: document.querySelector('#view input[data-a=sel]').dataset.id } }));
+    await page.waitForSelector('#pv [data-a=pv-move]', { timeout: 10000 });
+    const pv = await Promise.all(['pv-move', 'pv-copyto', 'pv-trash'].map(a => reach(`#pv [data-a=${a}]`)));
+    check(pv.every(x => x === 'ok'), '360px: the preview offers Move, Copy and Delete, on screen and clickable', pv.join(','));
+    await ctx.close();
+  }
+
   /* ---------- every page, every size, both themes: no sideways scrolling ---------- */
   for (const [w, h, label] of VIEWPORTS) {
     const { ctx, page } = await openApp(w, h, w < 900);

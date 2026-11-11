@@ -93,6 +93,16 @@ def _xdg_user_dirs(home):
     return out
 
 
+def dev_key(st_dev):
+    """Why: Python 3.12+ on Windows reports the full 64-bit volume serial as st_dev; for about half of all drives it is
+    2**63 or more, which SQLite cannot store (OverflowError). Every folder of a scan was then skipped and the scan found
+    0 files. The same 64 bits as a signed number fit, and stay unique and comparable."""
+    if st_dev is None:
+        return None
+    st_dev = int(st_dev) & 0xFFFFFFFFFFFFFFFF
+    return st_dev - (1 << 64) if st_dev >= (1 << 63) else st_dev
+
+
 def within(child, parent):
     """Why: containment checks must ignore case on Windows and never be fooled by '..'."""
     try:
@@ -131,7 +141,10 @@ def quick_folders():
 
 
 def default_destination():
-    """Why: sorted files go to one predictable folder in the user's home by default."""
+    """Why: sorted files go to one predictable folder in the user's home by default. On Android that is the phone's
+    shared storage: the Termux home is private to Termux (the Gallery cannot see it, and it goes with the app)."""
+    if ANDROID and os.path.isdir(ANDROID_STORAGE):
+        return os.path.join(ANDROID_STORAGE, config.DEST_FOLDER_NAME)
     return str(config.HOME / config.DEST_FOLDER_NAME)
 
 
@@ -571,6 +584,16 @@ def os_user():
         return getpass.getuser()
     except (OSError, KeyError, ImportError):
         return ""
+
+
+def relaunch_elevated(args, cwd):
+    """Why: the optional "Restart with administrator permission" (Windows only). Windows shows its own UAC prompt;
+    True only if the person accepted and the new process started. Your own folders never need this."""
+    if not WIN:
+        return False
+    params = subprocess.list2cmdline(args)
+    rc = ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, params, cwd, 1)
+    return int(rc) > 32   # <= 32 is an error code; 5 = the person declined the prompt
 
 
 def is_admin():

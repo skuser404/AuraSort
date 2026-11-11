@@ -6,7 +6,7 @@
 const TRASH_TYPED_MIN = 100;   // mirrors TRASH_TYPED_CONFIRM_MIN in core/config.py
 const GUARDED = new Set(['project', 'assets']);
 const LAYOUT_OPTS = [['here', 'Straight into this folder'], ['type', 'Into one folder per type', 'Images, Videos, PDFs…'], ['organized', 'Into type and sub-folders', 'Images/Camera, PDFs/Invoices…']];
-const binName = () => S.info && (S.info.os === 'mac' || S.info.os === 'linux') ? 'Trash' : 'Recycle Bin';
+const binName = () => S.info && S.info.os === 'android' ? 'AuraSort trash' : S.info && (S.info.os === 'mac' || S.info.os === 'linux') ? 'Trash' : 'Recycle Bin';
 const filesWord = n => n === 1 ? 'file' : 'files';
 
 function splitSelection(st, allowProject, allowVo) { // Why: the client shows the same split the server will apply

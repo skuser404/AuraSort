@@ -43,7 +43,11 @@ def main(files):
                 if not any(s in u for s in SKIP):
                     urls.setdefault(u, f"{Path(f).name}:{n}")
     bad = []
+    no_release = status("https://api.github.com/repos/skuser404/AuraSort/releases/latest") == 404
     for u, where in sorted(urls.items()):
+        if no_release and "/releases/latest/download/" in u:
+            print(f"skip {u}  ({where}): no release is published yet; the README marks it as the second option")
+            continue
         code = status(u)
         print(f"{code}  {u}  ({where})")
         if code != 200:

@@ -85,6 +85,30 @@ jobs:
         run: |
           & "$env:RUNNER_TEMP\release\install.ps1" -Source "$env:RUNNER_TEMP\release" -InstallDir "$env:RUNNER_TEMP\whatif" -Yes -NoStart -WhatIf
           if (Test-Path "$env:RUNNER_TEMP\whatif") { throw '-WhatIf created files' }
+      - name: The README line "irm ... | iex" from C:\Windows\System32 (PowerShell 5.1 and 7)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          AURASORT_PYTHON: ${{ steps.py.outputs.python-path }}
+        run: |
+          # The installer is served from this checkout; the README command runs unchanged apart from the address.
+          $srv = Start-Process python -ArgumentList '-m', 'http.server', '8999', '--bind', '127.0.0.1', '-d', "$env:RUNNER_TEMP\release" -PassThru -WindowStyle Hidden
+          Start-Sleep 2
+          try {
+            foreach ($shell in 'powershell.exe', 'pwsh.exe') {
+              $dir = "$env:RUNNER_TEMP\iex-$($shell.Split('.')[0])"
+              $env:AURASORT_INSTALLER_URL = 'http://127.0.0.1:8999/install.ps1'
+              $env:AURASORT_INSTALL_ARGS = "-Source $env:RUNNER_TEMP\release -InstallDir $dir -Yes -NoStart -NoShortcuts -NoPackages"
+              Push-Location C:\Windows\System32
+              $out = & $shell -NoProfile -ExecutionPolicy Bypass -Command "irm http://127.0.0.1:8999/install.ps1 | iex; 'WINDOW-STILL-OPEN ' + `$LASTEXITCODE"
+              Pop-Location
+              $out | ForEach-Object { "  [$shell] $_" }
+              if (-not ($out -match 'Self-test passed: found [1-9]')) { throw "$shell : the self-test did not pass" }
+              if (-not ($out -match 'WINDOW-STILL-OPEN 0')) { throw "$shell : the installer closed the window or failed" }
+              if (-not (Test-Path "$dir\server.py")) { throw "$shell : not installed" }
+              if ($dir -like '*System32*') { throw 'installed into System32' }
+            }
+          } finally { Stop-Process -Id $srv.Id -ErrorAction SilentlyContinue }
       - name: Start the installed app in a clean home, scan a fixture folder, require more than 0 files
         run: python tools/ci_smoke.py --app "${{ runner.temp }}/app"
 

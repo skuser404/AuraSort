@@ -96,6 +96,9 @@ class RequestContractTest(unittest.TestCase):
                     schema.scan_request(body)
                 self.assertEqual(cm.exception.code, "nothing_selected")
                 continue
+            if not config.WIN:   # the samples are Windows paths; on macOS/Linux the same folders look like /C/Users/anush/Music
+                posix = lambda ps: ["/" + p.replace(":", "").replace("\\", "/").strip("/") for p in ps]
+                body = dict(body, roots=posix(body["roots"]), skip=posix(body["skip"]))
             req = schema.scan_request(body)
             self.assertEqual(req["mode"], body["mode"], label)
         self.assertEqual(self.out["scan"]["deep_folders_only"]["roots"], ["C:\\Users\\anush\\Music", "C:\\Users\\anush\\Downloads"])

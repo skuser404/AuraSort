@@ -204,7 +204,7 @@ def run(job, dest, mode, ops, on_done=None, label="", verify_mode="full", confli
             _put_back(aside)
             with lock:
                 job.extra["skipped"] += 1
-                job.error(f"{op['name']}: {err}")
+                job.error(f"{op['name']}: {why(err)}")
         finally:
             with lock:
                 job.bytes += op["size"] - progress.pop(op["fid"], 0)
@@ -237,6 +237,16 @@ def run(job, dest, mode, ops, on_done=None, label="", verify_mode="full", confli
         m["failed"] = job.extra.get("skipped", 0)
         history.save(m)
         job.extra["free_after"] = drive_free(watch)
+
+
+def why(err):
+    """Why: "[Errno 1] Operation not permitted" says nothing; name the likely cause on this system."""
+    if isinstance(err, PermissionError):
+        hint = ("Android did not allow it: run termux-setup-storage in Termux and allow file access" if config.ANDROID else
+                "Controlled Folder Access or an antivirus may be blocking Python, or the file is read-only" if config.WIN else
+                "check the folder's permissions")
+        return f"no permission ({hint})"
+    return str(err)
 
 
 def _put_back(aside):

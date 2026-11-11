@@ -35,9 +35,17 @@ def acquire():
     return True
 
 
+def held():
+    """Why: True if this process already holds the one-server-per-data-folder lock."""
+    return "fh" in _HELD
+
+
 def remember_port(port):
     """Why: a second start reads this to open the running server's page."""
-    (config.DATA_DIR / PORT_FILE_NAME).write_text(json.dumps(dict(port=port, pid=os.getpid())), encoding="utf-8")
+    from .platform_utils import replace_file
+    tmp = config.DATA_DIR / (PORT_FILE_NAME + ".tmp")
+    tmp.write_text(json.dumps(dict(port=port, pid=os.getpid())), encoding="utf-8")
+    replace_file(tmp, config.DATA_DIR / PORT_FILE_NAME)   # atomic: a second start never reads a half-written file
 
 
 def running_port():

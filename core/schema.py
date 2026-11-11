@@ -59,6 +59,7 @@ POST_FIELDS = {
     "pin/reset": ("confirm",),
     "pin/settings": settings.SECURITY_KEYS,
     "apptrash/restore": ("id",),
+    "elevate": (),
 }
 # Guarded routes also carry the single-use PIN confirmation (core/pin.py); it is checked and removed before the route runs.
 for _route in config.PIN_GUARDED:
@@ -93,10 +94,21 @@ def norm_path(value, field):
     p = value.strip()
     if "\0" in p or len(p) > config.MAX_PATH_CHARS:
         raise BadRequest(f"One of the paths in '{field}' is not valid.", "bad_path")
-    if config.WIN and _DRIVE_ONLY.match(p):
-        p += "\\"                      # Windows reads a bare "C:" as "the current folder on C:", never what people mean
+    if config.WIN:
+        p = strip_long_prefix(p)       # "\\?\C:\..." must meet the same protection rules as "C:\..."
+        if _DRIVE_ONLY.match(p):
+            p += "\\"                  # Windows reads a bare "C:" as "the current folder on C:", never what people mean
     if not os.path.isabs(p):
         raise BadRequest(f"Paths in '{field}' must be full paths (like C:\\Users\\you\\Music or /home/you/Music).", "bad_path")
+    return os.path.normpath(p)         # "a\\..\\b" -> "b"; a drive root keeps its separator ("C:\\")
+
+
+def strip_long_prefix(p):
+    """Why: the Windows long-path prefix is an internal detail; every rule compares normal spellings."""
+    if p.startswith("\\\\?\\UNC\\"):
+        return "\\\\" + p[8:]
+    if p.startswith("\\\\?\\") or p.startswith("\\\\.\\"):
+        return p[4:]
     return p
 
 
