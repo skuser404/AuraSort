@@ -1,12 +1,14 @@
 <#
 .SYNOPSIS
-  Installs (or updates) AuraSort for the current user. No administrator rights are needed: do not use "Run as administrator".
+  Installs (or updates) AuraSort for the signed-in user, with administrator permission (Windows asks once).
 .DESCRIPTION
-  1. Checks for Python 3.10+ (offers to install Python 3.12 with winget, only if you say yes).
+  Administrator permission is used so Windows lets AuraSort read your folders and install the prerequisites. AuraSort never
+  touches Windows system folders. Without it (you decline the Windows prompt, or -NoElevate) it installs in standard mode.
+  1. Lists what it will install and asks once. Then: Python 3.12 if no Python 3.10+ is found (winget, or the official
+     python.org installer checked against a pinned SHA-256), pip and the optional packages (Pillow, pypdf).
   2. Downloads the latest GitHub release (aurasort.zip) and checks its SHA-256 against the release's SHA256SUMS.
-  3. Installs it to %LOCALAPPDATA%\AuraSort (your files and AuraSort's data in %USERPROFILE%\.aurasort are kept).
-  4. Installs the optional packages (Pillow, pypdf) for your user, adds Start Menu and Desktop shortcuts,
-     runs a self-test (server.py --doctor) and offers to start AuraSort.
+  3. Installs it to %LOCALAPPDATA%\AuraSort of the signed-in user (your files and AuraSort's data in
+     %USERPROFILE%\.aurasort are kept), adds Start Menu and Desktop shortcuts, runs a self-test and starts AuraSort.
   Safe to run again: that is how you update. Nothing outside the install folder and the two shortcuts is changed.
 .EXAMPLE
   irm https://raw.githubusercontent.com/skuser404/AuraSort/main/scripts/install.ps1 | iex
@@ -19,12 +21,17 @@
 param(
   [string]$Version = 'latest',                 # 'latest' or a tag such as v1.1.0
   [string]$Repo = 'skuser404/AuraSort',        # exactly as GitHub shows it
-  [string]$InstallDir = (Join-Path $env:LOCALAPPDATA 'AuraSort'),
+  [string]$InstallDir = '',                    # default: %LOCALAPPDATA%\AuraSort of the signed-in user
   [string]$Source = '',
   [switch]$Yes,                                # answer "yes" to every question (unattended / CI)
   [switch]$NoStart,
   [switch]$NoShortcuts,
-  [switch]$NoPackages
+  [switch]$NoPackages,
+  [switch]$NoElevate,                          # standard mode: do not ask Windows for administrator permission
+  # Set by the installer itself when it restarts with administrator permission: the signed-in user's folders, which
+  # differ from the administrator account's when someone else approved the Windows prompt.
+  [string]$UserProfile = '', [string]$UserLocalAppData = '', [string]$UserAppData = '', [string]$UserDesktop = '',
+  [switch]$PauseAtEnd
 )
 if ($null -eq $PSCmdlet) {
   # Why: "irm ... | iex" runs this text without a script around it: $PSCmdlet is null (every ShouldProcess call failed with
@@ -35,7 +42,9 @@ if ($null -eq $PSCmdlet) {
   $self = Join-Path ([IO.Path]::GetTempPath()) 'aurasort-install.ps1'
   $from = if ($env:AURASORT_INSTALLER_URL) { $env:AURASORT_INSTALLER_URL } else { "https://raw.githubusercontent.com/$Repo/main/scripts/install.ps1" }
   Invoke-WebRequest -UseBasicParsing $from -OutFile $self
-  $extra = @(); if ($env:AURASORT_INSTALL_ARGS) { $extra = @($env:AURASORT_INSTALL_ARGS -split ' ' | Where-Object { $_ }) }   # tests / CI only
+  $extra = @(); if ($env:AURASORT_INSTALL_ARGS) {   # tests / CI only; "quoted values" may contain spaces
+    $extra = @([regex]::Matches($env:AURASORT_INSTALL_ARGS, '"([^"]*)"|(\S+)') | ForEach-Object { if ($_.Groups[1].Success) { $_.Groups[1].Value } else { $_.Groups[2].Value } })
+  }
   Push-Location $HOME   # never System32
   try { & (Get-Process -Id $PID).Path -NoProfile -ExecutionPolicy Bypass -File $self @extra } finally { Pop-Location }
   $code = $LASTEXITCODE
@@ -64,12 +73,45 @@ function Ask([string]$q, [bool]$default) {
 # ---- 0. a safe starting point ----
 # Old Windows/PowerShell 5.1 may not offer TLS 1.2 by default; GitHub requires it.
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch { }
+try { [Net.WebRequest]::DefaultWebProxy.Credentials = [Net.CredentialCache]::DefaultNetworkCredentials } catch { }   # company proxies
 $isAdmin = $false
 try { $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) } catch { }
-if ($isAdmin) {
-  Write-Warning 'This PowerShell runs as Administrator. AuraSort does not need that, and it would be installed for the administrator account.'
-  Write-Warning 'Close this window, open PowerShell normally (not "Run as administrator") and run the command again.'
-  if (-not (Ask 'Continue anyway?' $false)) { exit 1 }
+# The app is for the signed-in user, also when an administrator account approved the Windows prompt.
+if (-not $UserProfile) { $UserProfile = $env:USERPROFILE }
+if (-not $UserLocalAppData) { $UserLocalAppData = $env:LOCALAPPDATA }
+if (-not $UserAppData) { $UserAppData = $env:APPDATA }
+if (-not $UserDesktop) { $UserDesktop = [Environment]::GetFolderPath('Desktop') }   # the real Desktop, also when OneDrive moved it
+$otherAccount = -not ($UserProfile.TrimEnd('\') -ieq "$env:USERPROFILE".TrimEnd('\'))
+if ($otherAccount) { $env:USERPROFILE = $UserProfile }   # the self-test and the first start use the user's home, not the administrator's
+if (-not $InstallDir) { $InstallDir = Join-Path $UserLocalAppData 'AuraSort' }
+Push-Location $UserProfile   # never C:\Windows\System32, where an administrator window starts
+
+function Invoke-Elevated([string]$exe, [string]$argLine) {
+  if ($env:AURASORT_FAKE_UAC -eq 'decline') { throw 'The operation was canceled by the user.' }   # tests only
+  return Start-Process -FilePath $exe -Verb RunAs -ArgumentList $argLine -Wait -PassThru
+}
+if (-not $isAdmin -and -not $NoElevate -and -not $env:AURASORT_NO_ELEVATE -and -not $WhatIfPreference -and $PSCommandPath) {
+  Step 'What this installer will do'
+  Say "  - AuraSort into $InstallDir, with Start Menu and Desktop shortcuts, then start it in your browser"
+  Say '  - Python 3.12, only if no Python 3.10 or newer is installed (winget, or the official python.org installer)'
+  Say '  - pip and two optional packages, Pillow and pypdf (AuraSort also runs without them)'
+  Say '  Windows asks for administrator permission next, so AuraSort can read your folders and install Python.'
+  Say '  AuraSort never touches Windows system folders. If you decline, it installs in standard mode.'
+  if (-not (Ask 'Continue?' $true)) { exit 1 }
+  $q = { param($v) '"' + $v + '"' }
+  $pass = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (& $q $PSCommandPath), '-Yes', '-PauseAtEnd',
+    '-UserProfile', (& $q $UserProfile), '-UserLocalAppData', (& $q $UserLocalAppData), '-UserAppData', (& $q $UserAppData),
+    '-UserDesktop', (& $q $UserDesktop), '-InstallDir', (& $q $InstallDir), '-Version', $Version, '-Repo', $Repo)
+  if ($Source) { $pass += @('-Source', (& $q $Source)) }
+  foreach ($s in 'NoStart', 'NoShortcuts', 'NoPackages') { if ($PSBoundParameters[$s]) { $pass += "-$s" } }
+  try {
+    $child = Invoke-Elevated (Get-Process -Id $PID).Path ($pass -join ' ')
+    Say "  The administrator window finished (exit code $($child.ExitCode))."
+    exit $child.ExitCode
+  } catch {
+    Say '  Administrator permission was not given. Installing in standard mode: AuraSort works the same; folders that'
+    Say '  Windows protects (other users, some system places) are skipped during scans. Run the command again to change that.'
+  }
 }
 $full = [IO.Path]::GetFullPath($InstallDir)
 foreach ($bad in @($env:WINDIR, (Join-Path $env:WINDIR 'System32'), $env:ProgramFiles, ${env:ProgramFiles(x86)})) {
@@ -87,7 +129,7 @@ function Find-Python {
   # WindowsApps opens the Store instead of running Python when Python is not installed, so it is never used blindly.
   $cands = @()
   if ($env:AURASORT_PYTHON) { $cands += $env:AURASORT_PYTHON }   # an exact interpreter (CI, or a Python in an unusual place)
-  foreach ($root in @((Join-Path $env:LOCALAPPDATA 'Programs\Python'), $env:ProgramFiles, ${env:ProgramFiles(x86)})) {
+  foreach ($root in @((Join-Path $UserLocalAppData 'Programs\Python'), (Join-Path $env:LOCALAPPDATA 'Programs\Python'), $env:ProgramFiles, ${env:ProgramFiles(x86)})) {
     if ($root -and (Test-Path $root)) {
       $cands += Get-ChildItem -Path $root -Filter 'Python3*' -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending |
         ForEach-Object { Join-Path $_.FullName 'python.exe' } | Where-Object { Test-Path $_ }
@@ -104,6 +146,26 @@ function Find-Python {
   if ($p -and (Test-Python $p.Source @())) { return @{ exe = $p.Source; pre = @() } }
   return $null
 }
+function Install-PythonOrg([string]$scope) {
+  # Why: no winget (older Windows 10, Windows Server, LTSC). The official installer, checked against pinned SHA-256
+  # values (python.org signs these files with Sigstore; the hashes were taken from verified downloads).
+  $arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'amd64' }
+  $want = @{ amd64 = '67b5635e80ea51072b87941312d00ec8927c4db9ba18938f7ad2d27b328b95fb'; arm64 = '377ac8fd478987940088e879441e702a71b53164d2a1e6f1d51ff77a7e470258' }[$arch]
+  $url = "https://www.python.org/ftp/python/3.12.10/python-3.12.10-$arch.exe"
+  $exe = Join-Path ([IO.Path]::GetTempPath()) "python-3.12.10-$arch.exe"
+  Say "  Downloading $url"
+  try { Invoke-WebRequest -UseBasicParsing $url -OutFile $exe } catch { Say "  The download failed ($($_.Exception.Message))."; return $null }
+  $fs = [IO.File]::OpenRead($exe)
+  try { $got = ([BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash($fs)) -replace '-', '').ToLower() } finally { $fs.Dispose() }
+  if ($got -ne $want) { Remove-Item $exe -Force; Say "  Checksum mismatch for the Python installer (expected $want, got $got). Not running it."; return $null }
+  Say "  Checksum OK. Installing Python 3.12.10 (a minute or two, no window)"
+  $all = if ($scope -eq 'machine') { 1 } else { 0 }
+  $p = Start-Process -FilePath $exe -ArgumentList "/quiet InstallAllUsers=$all PrependPath=1 Include_launcher=1 Include_test=0" -Wait -PassThru
+  Remove-Item $exe -Force -ErrorAction SilentlyContinue
+  if ($p.ExitCode -ne 0) { Say "  The Python installer stopped with exit code $($p.ExitCode)."; return $null }
+  Update-SessionPath
+  return Find-Python
+}
 function Update-SessionPath {
   # Why: winget changes PATH for new windows only; this window must see the new Python too.
   $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
@@ -116,13 +178,16 @@ if (-not $py) {
   if ($store -and $store.Source -like '*\WindowsApps\*') {
     Say '  Only the Microsoft Store "python" shortcut was found (it opens the Store; it is not Python).'
   }
+  # Installed for everyone when another account approved the Windows prompt (a per-user Python would land in that account).
+  $scope = if ($otherAccount) { 'machine' } else { 'user' }
   $winget = Get-Command winget -ErrorAction SilentlyContinue
-  if ($winget -and (Ask '  Python 3.10+ is not installed. Install Python 3.12 now with winget (for your user only)?' $true)) {
-    if ($PSCmdlet.ShouldProcess('Python 3.12', 'winget install')) {
-      & $winget.Source install --id Python.Python.3.12 --exact --scope user --accept-package-agreements --accept-source-agreements --silent
+  if (Ask '  Python 3.10+ is not installed. Install Python 3.12 now?' $true) {
+    if ($winget -and $PSCmdlet.ShouldProcess('Python 3.12', 'winget install')) {
+      & $winget.Source install -e --id Python.Python.3.12 --scope $scope --accept-package-agreements --accept-source-agreements --silent
       Update-SessionPath
       $py = Find-Python
     }
+    if (-not $py -and $PSCmdlet.ShouldProcess('Python 3.12.10', 'install from python.org')) { $py = Install-PythonOrg $scope }
   }
   if (-not $py) {
     Manual 'Python 3.10 or newer is needed and was not found.' 'winget install --id Python.Python.3.12 --exact --scope user'
@@ -180,14 +245,32 @@ function Get-Release([string]$work) {
 
 function New-Shortcut([string]$path, [string]$python, [string]$workdir) {
   # Why: the shortcut runs the exact Python found above (Unicode-safe: .lnk files store Unicode paths) in a window that
-  # stays open on an error, so the message can be read.
+  # stays open on an error, so the message can be read. Installed with administrator permission, it starts AuraSort the
+  # same way (Windows asks each time); for another approving account it also names the signed-in user's home folder.
+  New-Item -ItemType Directory -Force (Split-Path $path) | Out-Null
   $sh = New-Object -ComObject WScript.Shell
   $lnk = $sh.CreateShortcut($path)
   $lnk.TargetPath = $env:ComSpec
-  $lnk.Arguments = "/c `"`"$python`" server.py || pause`""
+  $setHome = if ($otherAccount) { "set `"USERPROFILE=$UserProfile`" && " } else { '' }
+  $lnk.Arguments = "/c `"$setHome`"$python`" server.py || pause`""
   $lnk.WorkingDirectory = $workdir; $lnk.Description = 'AuraSort - a local file organizer'
   $lnk.IconLocation = "$python,0"
   $lnk.Save()
+  if ($isAdmin) {   # the "Run as administrator" flag of a .lnk file: bit 0x20 of byte 0x15
+    $b = [IO.File]::ReadAllBytes($path); $b[0x15] = $b[0x15] -bor 0x20; [IO.File]::WriteAllBytes($path, $b)
+  }
+}
+function Wait-Server([int]$seconds) {
+  # Why: say "running" only once it answers; the port is the one the server wrote down.
+  $portFile = Join-Path $UserProfile '.aurasort\server.port'
+  for ($i = 0; $i -lt $seconds * 4; $i++) {
+    try {
+      $port = (Get-Content $portFile -Raw -ErrorAction Stop | ConvertFrom-Json).port
+      if ($port -and (Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:$port/" -TimeoutSec 2).StatusCode -eq 200) { return [int]$port }
+    } catch { }
+    Start-Sleep -Milliseconds 250
+  }
+  return 0
 }
 
 $work = Join-Path ([IO.Path]::GetTempPath()) ('aurasort-install-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
@@ -225,6 +308,10 @@ try {
   if (-not $NoPackages -and $py) {
     Step 'Installing optional packages (Pillow, pypdf) for your user'
     if ($PSCmdlet.ShouldProcess('requirements.txt', 'pip install --user')) {
+      # An old pip cannot read newer wheels. Its warnings go to stderr, which PowerShell 5.1 would turn into a stopping error.
+      $eap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+      & $py.exe -m pip install --user --disable-pip-version-check --quiet --upgrade pip 2>&1 | Out-Null
+      $ErrorActionPreference = $eap
       & $py.exe -m pip install --user --disable-pip-version-check --quiet -r (Join-Path $InstallDir 'requirements.txt')
       if ($LASTEXITCODE -ne 0) { Manual 'The optional packages could not be installed. AuraSort works without them.' "`"$($py.exe)`" -m pip install --user -r `"$InstallDir\requirements.txt`"" }
       else { Say '  Done.' }
@@ -234,9 +321,9 @@ try {
   # ---- 5. shortcuts ----
   if (-not $NoShortcuts) {
     Step 'Adding Start Menu and Desktop shortcuts'
-    $startMenu = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
+    $startMenu = Join-Path $UserAppData 'Microsoft\Windows\Start Menu\Programs'
     if ($PSCmdlet.ShouldProcess($startMenu, 'Add the AuraSort shortcut')) { New-Shortcut (Join-Path $startMenu 'AuraSort.lnk') $py.exe $InstallDir }
-    $desk = [Environment]::GetFolderPath('Desktop')   # the real Desktop, also when OneDrive moved it
+    $desk = $UserDesktop
     if ($desk -and $PSCmdlet.ShouldProcess($desk, 'Add the AuraSort shortcut')) { New-Shortcut (Join-Path $desk 'AuraSort.lnk') $py.exe $InstallDir }
   }
   if ($WhatIfPreference) { Say ''; Say 'WhatIf: nothing was installed or changed.'; return }
@@ -254,12 +341,20 @@ try {
   }
 
   Say ''
-  Say "AuraSort $ver is installed in $InstallDir" -ForegroundColor Green
-  Say '  Start it from the Start Menu or the Desktop (AuraSort). It opens in your browser at http://localhost:8765/'
+  Write-Host "AuraSort $ver is installed in $InstallDir" -ForegroundColor Green
+  Say "  Mode: $(if ($isAdmin) { 'administrator (Windows asks when the shortcut starts it)' } else { 'standard' })"
+  Say '  Start it from the Start Menu or the Desktop (AuraSort).'
   Say "  Update: run the same install command again.   Remove: powershell -ExecutionPolicy Bypass -File `"$InstallDir\scripts\uninstall.ps1`""
-  if (-not $NoStart -and (Ask 'Start AuraSort now?' $true)) { Start-Process -FilePath $py.exe -ArgumentList 'server.py' -WorkingDirectory $InstallDir }
+  if (-not $NoStart) {
+    Step 'Starting AuraSort'
+    Start-Process -FilePath $py.exe -ArgumentList 'server.py' -WorkingDirectory $InstallDir   # its own window; it opens the browser
+    $port = Wait-Server 30
+    if ($port) { Say "  AuraSort is running at http://localhost:$port/ . The first start scans your usual folders by itself." }
+    else { Manual 'AuraSort did not answer within 30 seconds. Start it from the Desktop shortcut.' '' }
+  }
 } finally {
   Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue -WhatIf:$false
+  if ($PauseAtEnd -and [Environment]::UserInteractive) { try { Read-Host 'Press Enter to close this window' | Out-Null } catch { } }
 }
 # Why: an explicit result. Without it, the exit code of the last program run inside the script leaks out (that made
 # every CI install "fail"). 0 = installed and the self-test passed; 2 = installed, but the self-test needs a look.

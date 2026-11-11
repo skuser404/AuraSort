@@ -10,26 +10,31 @@ download.
 
 Windows 10/11 Pro: *Turn Windows features on or off* > **Windows Sandbox**, then start it from the Start menu.
 
-1. In the Sandbox, open **PowerShell** normally (not "Run as administrator"). Run `cd $HOME`.
-   You should see a prompt like `C:\Users\WDAGUtilityAccount>`, not `C:\WINDOWS\System32`.
-2. `winget install --id Python.Python.3.12 --exact --scope user`. (winget may be missing in the Sandbox: download Python
-   from python.org instead and tick *Add python.exe to PATH*.) Close PowerShell and open a new one.
-3. `irm https://github.com/skuser404/AuraSort/releases/latest/download/install.ps1 | iex`
-   You should see: *Checksum OK*, *Installing AuraSort 1.1.0 to ...\AppData\Local\AuraSort*, the self-test lines with
-   `[OK  ]` (a `[WARN]` for *Free space* or *Drives* is fine), and *Start AuraSort now? [Y/n]*. Press Enter.
-4. The browser opens: *Before you start* > tick > Continue > *This computer* (device name and user name) > set a PIN.
-5. Quick Scan. You should see a result with more than 0 files, or a card explaining why (an empty Sandbox may truly have
-   no files: put a few into Downloads first).
+1. In the Sandbox, put a few files into Downloads. Start menu > type *PowerShell* > right-click > *Run as administrator*.
+   (No Python is needed first: the Sandbox has none, and winget is usually missing there, which tests the python.org path.)
+2. `irm https://raw.githubusercontent.com/skuser404/AuraSort/main/scripts/install.ps1 | iex`
+   You should see: the list of what will be installed and *Continue? [Y/n]* (Enter), *Checksum OK* for the Python
+   installer, *Checksum OK* for AuraSort, *Installing AuraSort ... to ...\AppData\Local\AuraSort*,
+   *Self-test passed: found 6 files*, *Mode: administrator*, *AuraSort is running at http://localhost:8765/*.
+3. The browser opens: *Before you start* > tick > Continue > *This computer* (device name and user name) > set a PIN.
+4. Without a click, a Quick Scan runs and the dashboard shows the files from step 1, with
+   *Suggested organization: N files into M folders* and *Apply*. Press Apply: the Sort preview opens with its confirm.
+   Cancel: nothing moved.
+5. Run the same command from a **normal** PowerShell: Windows shows its administrator prompt. Press **No**: you should
+   see *Installing in standard mode* and the install still finishes.
 6. Check the Start Menu and Desktop shortcuts both start AuraSort.
 7. Run the installer line again. You should see the same steps and *installed*; your PIN still works (data kept).
 
 ## 2. A new Windows user with a space and a non-English letter in the name
 
 Settings > Accounts > Other users > *Add account* > "I don't have this person's sign-in information" > local user
-`Test Ünï`, **Standard user** (not administrator). Sign in as that user.
+`Test Ünï`, **Standard user** (not administrator). Sign in as that user. This is the case where another account
+approves the Windows prompt.
 
-1. Steps 1 to 5 of test 1.
-2. Open Settings > Diagnostics > *Run diagnostics*. You should see *Administrator / root: normal user*, the Quick Scan
+1. Open PowerShell normally, run the command of test 1, and approve the Windows prompt with the administrator account's
+   password. You should see AuraSort installed in `C:\Users\Test Ünï\AppData\Local\AuraSort` (not in the administrator's
+   folder), the shortcuts on *Test Ünï*'s Desktop and Start Menu, and the first scan reading *Test Ünï*'s Downloads.
+2. Open Settings > Diagnostics > *Run diagnostics*. You should see *Administrator / root: administrator permission*, the Quick Scan
    folders under `~\...` with your user name shown as `<user>`, and *Test scan: N files*.
 3. Put 3 files in Downloads, Quick Scan again: you should see 3 more files and the Images/Documents numbers adding up to
    the total on the dashboard (no percentage above 100%).
@@ -81,7 +86,7 @@ on (some files show a cloud icon in Explorer):
 
 ## If the friend's PC still shows 0 files
 
-Ask them to open PowerShell normally (not as administrator) and run:
+Ask them to open PowerShell and run:
 
 ```powershell
 cd $env:LOCALAPPDATA\AuraSort

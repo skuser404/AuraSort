@@ -34,7 +34,7 @@
 | API keys | Session memory by default; optionally the OS keychain (Windows Credential Manager, macOS Keychain, Linux Secret Service). Never written to settings, files, URLs, logs or the browser. Sent only in an `Authorization` header over HTTPS. "Withdraw consent" removes it. On macOS the `security` tool receives the key as an argument for a moment (visible to your own processes only). |
 | Scanning | Links and junctions are skipped. System, tool and app-data folders are never entered. Project and asset folders start unticked. OneDrive/iCloud placeholders are listed from metadata only (reading them would download them). |
 | Parsers | Read-only, bounded reads, exceptions caught per file. Pillow and pypdf are optional and pinned. |
-| Local data | `~/.aurasort` is user-only (chmod 700/600, or a user-only ACL on Windows). Logs redact the token, keys and the home path. A warning is shown when running as Administrator/root. |
+| Local data | `~/.aurasort` is user-only (chmod 700/600, or a user-only ACL on Windows). Logs redact the token, keys and the home path. On Windows the installer runs AuraSort with administrator permission on purpose (so Windows lets it read the user's folders); the server still listens on 127.0.0.1 only, needs the per-run token and the PIN, and never touches Windows system folders. Root on macOS/Linux is warned about. |
 | Supply chain | Standard library only at runtime. Front end has no dependencies and no CDNs. GitHub Actions are pinned to commit SHAs with minimal permissions; Dependabot, CodeQL and bandit run in CI. Releases publish `SHA256SUMS`; the install scripts verify the ZIP before unpacking and refuse on a mismatch. |
 
 ## Known limits (residual risk)

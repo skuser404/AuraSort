@@ -59,6 +59,14 @@ find_python() {
   done
   return 1
 }
+linux_pkg_cmd() {   # Why: the one package-manager command for Python + venv; sudo only when not root already
+  S=""; [ "$(id -u)" = 0 ] || S="sudo "
+  if command -v apt-get >/dev/null 2>&1; then printf '%s' "${S}apt-get install -y python3 python3-venv"
+  elif command -v dnf >/dev/null 2>&1; then printf '%s' "${S}dnf install -y python3"
+  elif command -v pacman >/dev/null 2>&1; then printf '%s' "${S}pacman -S --needed --noconfirm python"
+  elif command -v zypper >/dev/null 2>&1; then printf '%s' "${S}zypper --non-interactive install python3"
+  fi
+}
 step "Checking for Python 3.10 or newer"
 PY="$(find_python || true)"
 if [ -z "$PY" ]; then
@@ -74,11 +82,18 @@ if [ -z "$PY" ]; then
     PY="$(find_python || true)"
     [ -n "$PY" ] || manual "Python 3.10 or newer is needed." "brew install python@3.12   (or the installer from https://www.python.org/downloads/macos/)"
   else
-    manual "Python 3.10 or newer is needed. Install it with your package manager, then run this again:" ""
-    say "    Debian/Ubuntu/Mint:  sudo apt install python3 python3-venv"
-    say "    Fedora:              sudo dnf install python3"
-    say "    Arch/Manjaro:        sudo pacman -S python"
-    say "    openSUSE:            sudo zypper install python3"
+    PKG="$(linux_pkg_cmd)"
+    if [ -n "$PKG" ] && ask "  Python 3.10+ is missing. Install it now with: $PKG (asks for your password)?" y; then
+      run sh -c "$PKG" || true
+      PY="$(find_python || true)"
+    fi
+    if [ -z "$PY" ]; then
+      manual "Python 3.10 or newer is needed. Install it with your package manager, then run this again:" ""
+      say "    Debian/Ubuntu/Mint:  sudo apt install python3 python3-venv"
+      say "    Fedora:              sudo dnf install python3"
+      say "    Arch/Manjaro:        sudo pacman -S python"
+      say "    openSUSE:            sudo zypper install python3"
+    fi
   fi
   [ -n "$PY" ] || { [ "$DRY" = 1 ] || exit 1; PY=python3; }
 fi
@@ -150,10 +165,18 @@ if [ "$PACKAGES" = 1 ]; then
   if [ "$DRY" = 1 ]; then say "  would create $DEST/.venv and pip install -r requirements.txt"
   elif venv_py >/dev/null || { "$PY" -m venv "$DEST/.venv" >/dev/null 2>&1 && venv_py >/dev/null; }; then
     VPY="$(venv_py)"
+    "$VPY" -m pip install --disable-pip-version-check --quiet --upgrade pip >/dev/null 2>&1 || true   # an old pip cannot read newer wheels
     if "$VPY" -m pip install --disable-pip-version-check --quiet -r "$DEST/requirements.txt"; then RUNPY="$VPY"; say "  Done."
     else manual "The optional packages could not be installed. AuraSort works without them." "$VPY -m pip install -r $DEST/requirements.txt"; fi
   else
-    manual "Python's venv module is missing, so the optional packages were skipped (AuraSort works without them)." "sudo apt install python3-venv   (then run this installer again)"
+    if [ "$OS" = Linux ] && command -v apt-get >/dev/null 2>&1 && ask "  Python's venv module is missing. Install it with: sudo apt-get install -y python3-venv?" y \
+       && run sudo apt-get install -y python3-venv && "$PY" -m venv "$DEST/.venv" >/dev/null 2>&1 && venv_py >/dev/null; then
+      VPY="$(venv_py)"
+      run "$VPY" -m pip install --disable-pip-version-check --quiet --upgrade pip || true
+      if run "$VPY" -m pip install --disable-pip-version-check --quiet -r "$DEST/requirements.txt"; then RUNPY="$VPY"; say "  Done."; else manual "The optional packages could not be installed. AuraSort works without them." ""; fi
+    else
+      manual "Python's venv module is missing, so the optional packages were skipped (AuraSort works without them)." "sudo apt install python3-venv   (then run this installer again)"
+    fi
   fi
 fi
 
