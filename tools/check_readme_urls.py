@@ -18,7 +18,19 @@ SKIP = ("localhost", "127.0.0.1", "example.com")
 UA = "AuraSort-readme-link-check (+https://github.com/skuser404/AuraSort)"
 
 
-def status(url):
+def status(url, tries=3, wait=10):
+    """Why: GitHub sometimes answers 429 or 5xx, and runners lose the network for a moment: try 3 times, 10 s apart."""
+    code = "error"
+    for i in range(tries):
+        code = _status_once(url)
+        if code == 200 or (isinstance(code, int) and code < 500 and code != 429):
+            return code
+        if i < tries - 1:
+            time.sleep(wait)
+    return code
+
+
+def _status_once(url):
     """HEAD first (cheap); some servers refuse HEAD, so GET on 403/405."""
     for method in ("HEAD", "GET"):
         req = urllib.request.Request(url, method=method, headers={"User-Agent": UA})
