@@ -156,6 +156,8 @@ jobs:
       - name: All pages, Quick/Deep scans, PIN, move/copy/delete with PIN, conflicts, undo
         shell: pwsh
         run: |
+          # Each FAIL line also becomes an annotation on the run page (readable without signing in).
+          filter Annotate { $_; if ("$_" -match '^FAIL ') { "::error title=browser test::$("$_".Substring(5).Replace('%', '%25'))" } }
           $fx = "$env:RUNNER_TEMP\fx"; $out = "$env:RUNNER_TEMP\e2e-out"
           foreach ($round in 'cdp', 'playwright') {
             Get-Process python -ErrorAction SilentlyContinue | Stop-Process -Force
@@ -167,12 +169,12 @@ jobs:
             $env:USERPROFILE = $env:USERPROFILE_BACKUP   # only the test server sees the fixture home (Edge must not)
             Start-Sleep 4
             if ($round -eq 'cdp') {
-              node tests\e2e\app.e2e.mjs --home "$fx\home" --out "$out\app"; if ($LASTEXITCODE) { exit 1 }
-              node tests\e2e\checks.e2e.mjs --out "$out\checks"; if ($LASTEXITCODE) { exit 1 }
-              node tests\e2e\docai.e2e.mjs --out "$out\docai"; if ($LASTEXITCODE) { exit 1 }
+              node tests\e2e\app.e2e.mjs --home "$fx\home" --out "$out\app" | Annotate; if ($LASTEXITCODE) { exit 1 }
+              node tests\e2e\checks.e2e.mjs --out "$out\checks" | Annotate; if ($LASTEXITCODE) { exit 1 }
+              node tests\e2e\docai.e2e.mjs --out "$out\docai" | Annotate; if ($LASTEXITCODE) { exit 1 }
             } else {
-              node tests\e2e\full.pw.mjs --home "$fx\home" --out "$out\pw" --pw "$env:RUNNER_TEMP\pw"; if ($LASTEXITCODE) { exit 1 }
-              node tests\e2e\responsive.pw.mjs --out "$out\screens" --pw "$env:RUNNER_TEMP\pw"; if ($LASTEXITCODE) { exit 1 }
+              node tests\e2e\full.pw.mjs --home "$fx\home" --out "$out\pw" --pw "$env:RUNNER_TEMP\pw" | Annotate; if ($LASTEXITCODE) { exit 1 }
+              node tests\e2e\responsive.pw.mjs --out "$out\screens" --pw "$env:RUNNER_TEMP\pw" | Annotate; if ($LASTEXITCODE) { exit 1 }
             }
           }
       - uses: actions/upload-artifact@v4   # tag, not a commit SHA: replace with the SHA Dependabot proposes

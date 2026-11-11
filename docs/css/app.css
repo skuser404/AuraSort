@@ -397,6 +397,7 @@ button.rank { cursor: pointer }
 .mbox h2 { margin-bottom: 10px }
 #toast { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%); z-index: 90; display: flex; gap: 10px; align-items: center; max-width: min(560px, calc(100vw - 32px));
   padding: 12px 18px; border-radius: 10px; background: var(--card-solid); border: 1px solid var(--border-2); box-shadow: var(--shadow); animation: toastIn .25s var(--ease) both }
+body.has-selbar #toast { bottom: auto; top: calc(12px + env(safe-area-inset-top)) }   /* never over Move / Copy / Delete */
 #toast .i { color: var(--accent) }
 #toast.err { border-color: color-mix(in srgb, var(--bad) 50%, transparent) } #toast.err .i { color: var(--bad) }
 #toast.ok .i { color: var(--ok) }

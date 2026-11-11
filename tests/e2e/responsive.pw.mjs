@@ -141,7 +141,8 @@ try {
     await go(page, 'media');
     const reach = sel => page.evaluate(s => { const el = document.querySelector(s); if (!el) return 'missing';
       el.scrollIntoView({ block: 'center' }); const r = el.getBoundingClientRect(), top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
-      return r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth && top && (top === el || el.contains(top)) ? 'ok' : 'not reachable' }, sel);
+      if (!(r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth)) return 'off screen';
+      return top && (top === el || el.contains(top)) ? 'ok' : `covered by ${top ? (top.closest('[id]') || top).id || top.className : 'nothing'}: "${top ? top.textContent.trim().slice(0, 60) : ''}"` }, sel);
     await page.check('#view input[data-a=sel]');
     const bar = await Promise.all(['act-move', 'act-copy', 'act-trash'].map(a => reach(`#selbar [data-a=${a}]`)));
     check(bar.every(x => x === 'ok'), '360px: the selection bar offers Move, Copy and Delete, on screen and clickable', bar.join(','));
